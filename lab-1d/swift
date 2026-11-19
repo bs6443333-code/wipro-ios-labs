@@ -1,0 +1,115 @@
+import Foundation
+
+// ==========================================
+// EXTENSION: Profile Model (Required name, optional address & phone)
+// ==========================================
+struct Address {
+    let city: String
+    let postalCode: String?
+}
+
+struct StudentProfile {
+    let name: String          // Required
+    let address: Address?     // Optional
+    let phone: String?        // Optional
+}
+
+// ==========================================
+// TASK 1: Lookup Function Returning an Optional Result
+// ==========================================
+let studentMarksDirectory: [Int: Double] = [
+    101: 91.5,
+    102: 78.0,
+    103: 84.5
+]
+
+func lookupMarks(forStudentID id: Int) -> Double? {
+    // Dictionary subscripting naturally returns an Optional (Double?)
+    return studentMarksDirectory[id]
+}
+
+// ==========================================
+// TASK 2 & 3: Demonstrating Safe Unwrapping Techniques
+// ==========================================
+
+// 1. `if let` — Safe conditional unwrapping for a single branch
+func displayMarksWithIfLet(studentID: Int) {
+    if let marks = lookupMarks(forStudentID: studentID) {
+        print("[if let] Student \(studentID) scored \(marks) marks.")
+    } else {
+        // TASK 3: Gracefully handling a missing dictionary key
+        print("[if let] No marks record found for Student ID \(studentID).")
+    }
+}
+
+// 2. `guard let` — Early exit when required values are missing or empty
+func processFormSubmission(studentIDInput: String?, nameInput: String?) {
+    // TASK 3: Handle nil or empty/whitespace-only text fields gracefully
+    guard let rawID = studentIDInput?.trimmingCharacters(in: .whitespacesAndNewlines),
+          !rawID.isEmpty,
+          let parsedID = Int(rawID) else {
+        print("[guard let] Validation Error: Student ID text field is empty or not a valid number.")
+        return
+    }
+    
+    guard let rawName = nameInput?.trimmingCharacters(in: .whitespacesAndNewlines),
+          !rawName.isEmpty else {
+        print("[guard let] Validation Error: Student Name text field cannot be empty.")
+        return
+    }
+    
+    guard let marks = lookupMarks(forStudentID: parsedID) else {
+        print("[guard let] Lookup Failed: Student '\(rawName)' (ID: \(parsedID)) has no marks on file.")
+        return
+    }
+    
+    print("[guard let] Success: Verified '\(rawName)' (ID: \(parsedID)) with \(marks) marks.")
+}
+
+// 3. Optional Chaining (`?.`) & Nil-Coalescing (`??`) — Profile Summary
+func printProfileSummary(for profile: StudentProfile) {
+    // Optional chaining safely traverses nested optionals without crashing if address is nil
+    let uppercasedCity = profile.address?.city.uppercased()
+    
+    // Nil-coalescing provides clean fallback values when optionals are nil
+    let displayCity = uppercasedCity ?? "City Not Provided"
+    let displayPostal = profile.address?.postalCode ?? "N/A"
+    let displayPhone = profile.phone ?? "No Phone Registered"
+    
+    print("""
+    --- Student Profile ---
+    Name:   \(profile.name)
+    City:   \(displayCity) (Postal: \(displayPostal))
+    Phone:  \(displayPhone)
+    """)
+}
+
+// ==========================================
+// EXECUTION & VERIFICATION (Zero Force Unwraps)
+// ==========================================
+print("=== 1. DICTIONARY LOOKUP (`if let` & Missing Key Handling) ===")
+displayMarksWithIfLet(studentID: 101) // Existing key
+displayMarksWithIfLet(studentID: 999) // Missing key handled gracefully
+
+print("\n=== 2. TEXT FIELD VALIDATION (`guard let` & Empty Input Handling) ===")
+processFormSubmission(studentIDInput: "   ", nameInput: "Aarav")      // Empty text field
+processFormSubmission(studentIDInput: nil, nameInput: "Aarav")        // Nil text field
+processFormSubmission(studentIDInput: "102", nameInput: "")           // Empty name field
+processFormSubmission(studentIDInput: "404", nameInput: "Diya")       // Valid input, missing dictionary key
+processFormSubmission(studentIDInput: "103", nameInput: "Rohan")      // All valid
+
+print("\n=== 3. PROFILE MODEL (Optional Chaining & Nil-Coalescing) ===")
+let completeProfile = StudentProfile(
+    name: "Ananya Verma",
+    address: Address(city: "Bengaluru", postalCode: "560001"),
+    phone: "+91-9876543210"
+)
+
+let minimalProfile = StudentProfile(
+    name: "Kabir Mehta",
+    address: nil,
+    phone: nil
+)
+
+printProfileSummary(for: completeProfile)
+printProfileSummary(for: minimalProfile)
