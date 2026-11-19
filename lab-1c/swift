@@ -1,0 +1,111 @@
+import Foundation
+
+// ==========================================
+// TASK 1: Array Operations (Course Names)
+// ==========================================
+print("=== TASK 1: ARRAY OF COURSE NAMES ===")
+
+var courses: [String] = ["Swift Programming", "Data Structures", "Database Systems", "iOS App Development"]
+print("Initial courses: \(courses)")
+
+// Add courses
+courses.append("Operating Systems")
+courses.insert("Computer Networks", at: 1)
+print("After adding courses: \(courses)")
+
+// Remove a course
+if let indexToRemove = courses.firstIndex(of: "Database Systems") {
+    let removed = courses.remove(at: indexToRemove)
+    print("Removed '\(removed)': \(courses)")
+}
+
+// Sort courses alphabetically
+let sortedCourses = courses.sorted()
+print("Sorted courses (A-Z): \(sortedCourses)")
+
+// Filter courses (e.g., courses containing "Systems" or longer than 16 characters)
+let filteredCourses = courses.filter { $0.contains("Systems") || $0.contains("Swift") }
+print("Filtered courses (containing 'Systems' or 'Swift'): \(filteredCourses)")
+
+// Search for a course
+let searchQuery = "iOS App Development"
+if courses.contains(searchQuery) {
+    print("Search result: '\(searchQuery)' is available in the catalog.")
+} else {
+    print("Search result: '\(searchQuery)' was not found.")
+}
+
+// ==========================================
+// TASK 2: Set Operations (Unique Student IDs)
+// ==========================================
+print("\n=== TASK 2: SET OF STUDENT IDS ===")
+
+let rawStudentIDs: [Int] = [1001, 1002, 1003, 1001, 1004, 1002, 1005, 1003]
+print("Raw IDs list (with duplicates): \(rawStudentIDs) (Total entries: \(rawStudentIDs.count))")
+
+// Convert Array to Set to automatically remove duplicates
+let uniqueStudentIDs: Set<Int> = Set(rawStudentIDs)
+print("Unique Student IDs (sorted for display): \(uniqueStudentIDs.sorted())")
+print("Unique student count: \(uniqueStudentIDs.count)")
+
+// ==========================================
+// TASK 3: Dictionary Operations (IDs -> Marks)
+// ==========================================
+print("\n=== TASK 3: DICTIONARY OF STUDENT MARKS ===")
+
+let studentMarks: [Int: Double] = [
+    1001: 88.5,
+    1002: 42.0,
+    1003: 96.0,
+    1004: 35.5,
+    1005: 79.0
+]
+print("Student Marks Record: \(studentMarks)")
+
+// Find the topper (highest mark)
+if let topper = studentMarks.max(by: { $0.value < $1.value }) {
+    print("Topper: Student ID \(topper.key) with \(topper.value) marks")
+}
+
+// Find students below a threshold (e.g., < 50.0)
+let passingThreshold: Double = 50.0
+let belowThresholdStudents = studentMarks
+    .filter { $0.value < passingThreshold }
+    .sorted { $0.key < $1.key }
+
+print("Students scoring below \(passingThreshold):")
+for (id, mark) in belowThresholdStudents {
+    print("  • Student ID \(id): \(mark) marks")
+}
+
+// ==========================================
+// TASK 4: Enum with Switch (Order Status & Task Priority)
+// ==========================================
+print("\n=== TASK 4: ENUM & SWITCH LABELS ===")
+
+enum OrderStatus: CaseIterable {
+    case pending
+    case processing
+    case shipped
+    case delivered
+    case cancelled
+    
+    var displayLabel: String {
+        switch self {
+        case .pending:
+            return "Pending Confirmation — Awaiting payment verification."
+        case .processing:
+            return "Processing — Your order is being packed."
+        case .shipped:
+            return "Shipped — Your package is on the way!"
+        case .delivered:
+            return "Delivered — Package arrived at destination."
+        case .cancelled:
+            return "Cancelled — Order was voided and refunded."
+        }
+    }
+}
+
+for status in OrderStatus.allCases {
+    print("[\(status)] -> \(status.displayLabel)")
+}
