@@ -1,0 +1,69 @@
+import Foundation
+
+print("=== 1. TESTING INVALID ACCOUNT SETUP ===")
+do {
+    _ = try BankAccount(accountNumber: "", ownerName: "Aarav", initialDeposit: 500)
+} catch {
+    print("Caught expected error -> \(error)")
+}
+
+do {
+    _ = try BankAccount(accountNumber: "ACC-100", ownerName: "Aarav", initialDeposit: -100)
+} catch {
+    print("Caught expected error -> \(error)")
+}
+
+print("\n=== 2. CREATING VALID ACCOUNT & TESTING OPERATIONS ===")
+do {
+    // Public initializer
+    let account = try BankAccount(accountNumber: "ACC-2026", ownerName: "Diya Sharma", initialDeposit: 1000.0)
+    
+    // Internal property is visible here because main.swift is in the same module
+    print("Account opened at internal branch: \(account.branchCode)")
+    
+    // Valid deposit
+    try account.deposit(amount: 500.0)
+    print("After depositing 500 -> Balance: \(account.checkBalance())")
+    
+    // Invalid deposits (0 and negative)
+    do {
+        try account.deposit(amount: 0)
+    } catch {
+        print("Caught expected error -> \(error)")
+    }
+    
+    do {
+        try account.deposit(amount: -50)
+    } catch {
+        print("Caught expected error -> \(error)")
+    }
+    
+    // Valid withdrawal
+    try account.withdraw(amount: 300.0)
+    print("After withdrawing 300 -> Balance: \(account.checkBalance())")
+    
+    // Invalid withdrawals (larger than balance and negative)
+    do {
+        try account.withdraw(amount: 2000.0)
+    } catch {
+        print("Caught expected error -> \(error)")
+    }
+    
+    do {
+        try account.withdraw(amount: -20.0)
+    } catch {
+        print("Caught expected error -> \(error)")
+    }
+    
+    // Internal method works within the same module
+    account.printStatement()
+    
+    // === VISIBILITY CHECKS (Uncommenting any of the lines below causes a compiler error) ===
+    // account.balance = 999999.0              // ERROR: 'balance' is inaccessible due to 'private' protection level
+    // account.recordTransaction("Fake log")   // ERROR: 'recordTransaction' is inaccessible due to 'private' protection level
+    // print(account.transactionHistory)       // ERROR: 'transactionHistory' is inaccessible due to 'fileprivate' protection level
+    // _ = BankAuditLogger()                   // ERROR: 'BankAuditLogger' is inaccessible due to 'fileprivate' protection level
+    
+} catch {
+    print("Unexpected error: \(error)")
+}
