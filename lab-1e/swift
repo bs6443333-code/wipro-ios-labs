@@ -1,0 +1,114 @@
+import Foundation
+
+// ==========================================
+// TASK 1: Model Course (struct) & CourseManager (class)
+// ==========================================
+struct Course {
+    var code: String
+    var title: String
+    var credits: Int
+}
+
+class CourseManager {
+    var department: String
+    var activeCourses: [Course]
+    
+    init(department: String, activeCourses: [Course]) {
+        self.department = department
+        self.activeCourses = activeCourses
+    }
+}
+
+// ==========================================
+// TASK 2: Copy & Modify Comparison (Value vs. Reference Semantics)
+// ==========================================
+print("=== TASK 1 & 2: STRUCT VS. CLASS COPY BEHAVIOUR ===")
+
+// 1. Struct (Value Type) Copy
+var originalCourse = Course(code: "CS101", title: "Swift Foundations", credits: 4)
+var copiedCourse = originalCourse // Creates an independent copy
+copiedCourse.title = "Advanced iOS Architecture"
+copiedCourse.credits = 5
+
+print("Original Struct -> \(originalCourse.code): \(originalCourse.title) (\(originalCourse.credits) credits)")
+print("Copied Struct   -> \(copiedCourse.code): \(copiedCourse.title) (\(copiedCourse.credits) credits)")
+// Observation: Modifying `copiedCourse` does NOT affect `originalCourse`.
+
+// 2. Class (Reference Type) Copy
+let originalManager = CourseManager(department: "Computer Science", activeCourses: [originalCourse])
+let copiedManager = originalManager // Copies the reference (pointer) to the exact same instance
+copiedManager.department = "Software Engineering"
+copiedManager.activeCourses.append(copiedCourse)
+
+print("Original Class  -> Dept: \(originalManager.department), Course Count: \(originalManager.activeCourses.count)")
+print("Copied Class    -> Dept: \(copiedManager.department), Course Count: \(copiedManager.activeCourses.count)")
+// Observation: Modifying `copiedManager` mutates `originalManager` because both variables point to the same shared instance.
+
+
+// ==========================================
+// TASK 3: Related Reference Types (Teacher & Classroom with weak/unowned)
+// ==========================================
+print("\n=== TASK 3: WEAK & UNOWNED OWNERSHIP ===")
+
+class Teacher {
+    let name: String
+    // A classroom may or may not have an assigned teacher at any moment,
+    // and the classroom can outlive the teacher's assignment -> `weak` optional reference.
+    weak var classroom: Classroom?
+    
+    init(name: String) {
+        self.name = name
+        print("  [Init] Teacher \(name) initialized")
+    }
+    
+    deinit {
+        print("  [Deinit] Teacher \(name) deallocated cleanly")
+    }
+}
+
+class Classroom {
+    let roomNumber: String
+    var assignedTeacher: Teacher?
+    var smartBoard: SmartBoard?
+    
+    init(roomNumber: String) {
+        self.roomNumber = roomNumber
+        print("  [Init] Classroom \(roomNumber) initialized")
+    }
+    
+    deinit {
+        print("  [Deinit] Classroom \(roomNumber) deallocated cleanly")
+    }
+}
+
+class SmartBoard {
+    let serialNumber: String
+    // A SmartBoard is permanently installed inside a Classroom and cannot exist without it.
+    // Since Classroom always outlives or dies with its SmartBoard, `unowned` is safe and appropriate.
+    unowned let room: Classroom
+    
+    init(serialNumber: String, room: Classroom) {
+        self.serialNumber = serialNumber
+        self.room = room
+        print("  [Init] SmartBoard \(serialNumber) installed in \(room.roomNumber)")
+    }
+    
+    deinit {
+        print("  [Deinit] SmartBoard \(serialNumber) deallocated cleanly")
+    }
+}
+
+do {
+    let teacher = Teacher(name: "Dr. Meera Nair")
+    let room = Classroom(roomNumber: "Lab-302")
+    let board = SmartBoard(serialNumber: "SB-900", room: room)
+    
+    room.assignedTeacher = teacher
+    teacher.classroom = room // weak reference prevents a Teacher <-> Classroom retain cycle
+    room.smartBoard = board  // unowned back-reference in SmartBoard prevents a Classroom <-> SmartBoard cycle
+} // End of scope: all three objects deallocate cleanly!
+
+
+// ==========================================
+// TASK 4: Strong Reference Cycle with Closures & Fix via Capture List
+// ==========================================
