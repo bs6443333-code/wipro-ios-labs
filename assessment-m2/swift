@@ -1,0 +1,197 @@
+import SwiftUI
+import Combine
+
+// MARK: - Models
+struct TaskItem: Identifiable, Equatable, Sendable {
+    let id: UUID
+    let title: String
+    let category: String
+    var isCompleted: Bool
+
+    init(id: UUID = UUID(), title: String, category: String = "General", isCompleted: Bool = false) {
+        self.id = id
+        self.title = title
+        self.category = category
+        self.isCompleted = isCompleted
+    }
+}
+
+enum ViewState: Equatable {
+    case idle
+    case loading
+    case success([TaskItem])
+    case error(String)
+    case cancelled
+}
+
+// MARK: - Data Service Protocol (Enables Unit Testing)
+protocol TaskFetchingService: Sendable {
+    func fetchWorkTasks(simulateError: Bool) async throws -> [TaskItem]
+    func fetchPersonalTasks() async throws -> [TaskItem]
+}
+
+struct MockTaskService: TaskFetchingService {
+    func fetchWorkTasks(simulateError: Bool) async throws -> [TaskItem] {
+        try await Task.sleep(for: .seconds(1.5))
+        try Task.checkCancellation()
+        if simulateError {
+            throw URLError(.badServerResponse)
+        }
+        return [
+            TaskItem(title: "Review PRs", category: "Work"),
+            TaskItem(title: "Deploy Staging Build", category: "Work")
+        ]
+    }
+
+    func fetchPersonalTasks() async throws -> [TaskItem] {
+        try await Task.sleep(for: .seconds(1.5))
+        try Task.checkCancellation()
+        return [
+            TaskItem(title: "Buy Groceries", category: "Personal"),
+            TaskItem(title: "Evening Cricket Practice", category: "Personal")
+        ]
+    }
+}
+
+// MARK: - Task 1, 2 & 3: MVVM ViewModel
+@MainActor
+final class TaskListViewModel: ObservableObject {
+    @Published private(set) var state: ViewState = .idle
+    @Published var newTaskTitle: String = ""
+    @Published var simulateError: Bool = false
+
+    private let service: TaskFetchingService
+    private var fetchTask: Task<Void, Never>?
+
+    init(service: TaskFetchingService = MockTaskService()) {
+        self.service = service
+    }
+
+    var isLoading: Bool {
+        if case .loading = state { return true }
+        return false
+    }
+
+    // Task 2: Fetch two independent data sources concurrently using async let and combine results
+    func loadAllTasks() {
+        fetchTask?.cancel()
+        state = .loading
+        let shouldFail = simulateError
+
+        fetchTask = Task {
+            do {
+                async let workTasks = service.fetchWorkTasks(simulateError: shouldFail)
+                async let personalTasks = service.fetchPersonalTasks()
+
+                let combined = try await workTasks + personalTasks
+                guard !Task.isCancelled else {
+                    state = .cancelled
+                    return
+                }
+                state = .success(combined)
+            } catch is CancellationError {
+                state = .cancelled
+            } catch {
+                state = .error("Failed to fetch tasks: \(error.localizedDescription)")
+            }
+        }
+    }
+
+    func cancelLoad() {
+        fetchTask?.cancel()
+        fetchTask = nil
+    }
+
+    // ViewModel business logic for adding, toggling, and deleting tasks
+    func addTask() {
+        let trimmed = newTaskTitle.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty, case .success(var current) = state else { return }
+        current.append(TaskItem(title: trimmed))
+        state = .success(current)
+        newTaskTitle = ""
+    }
+
+    func toggleTask(_ task: TaskItem) {
+        guard case .success(var current) = state,
+              let index = current.firstIndex(where: { $0.id == task.id }) else { return }
+        current[index].isCompleted.toggle()
+        state = .success(current)
+    }
+
+    func deleteTasks(at offsets: IndexSet) {
+        guard case .success(var current) = state else { return }
+        current.remove(atOffsets: offsets)
+        state = .success(current)
+    }
+}
+
+// MARK: - SwiftUI View
+struct TaskDashboardView: View {
+    @StateObject private var viewModel = TaskListViewModel()
+
+    var body: some View {
+        NavigationStack {
+            VStack(spacing: 12) {
+                Toggle("Simulate Network Error", isOn: $viewModel.simulateError)
+                    .padding(.horizontal)
+
+                HStack(spacing: 12) {
+                    Button("Sync Sources") {
+                        viewModel.loadAllTasks()
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .disabled(viewModel.isLoading)
+
+                    Button("Cancel", role: .destructive) {
+                        viewModel.cancelLoad()
+                    }
+                    .buttonStyle(.bordered)
+                    .disabled(!viewModel.isLoading)
+                }
+
+                Divider()
+
+                switch viewModel.state {
+                case .idle:
+                    ContentUnavailableView("No Data Loaded", systemImage: "tray", description: Text("Tap 'Sync Sources' to fetch tasks concurrently."))
+
+                case .loading:
+                    ProgressView("Fetching Work & Personal tasks...")
+                        .frame(maxHeight: .infinity)
+
+                case .success(let tasks):
+                    HStack {
+                        TextField("New task...", text: $viewModel.newTaskTitle)
+                            .textFieldStyle(.roundedBorder)
+                        Button("Add") { viewModel.addTask() }
+                            .buttonStyle(.bordered)
+                    }
+                    .padding(.horizontal)
+
+                    List {
+                        ForEach(tasks) { task in
+                            HStack {
+                                Image(systemName: task.isCompleted ? "checkmark.circle.fill" : "circle")
+                                    .foregroundColor(task.isCompleted ? .green : .gray)
+                                VStack(alignment: .leading) {
+                                    Text(task.title).strikethrough(task.isCompleted)
+                                    Text(task.category).font(.caption).foregroundColor(.secondary)
+                                }
+                            }
+                            .contentShape(Rectangle())
+                            .onTapGesture { viewModel.toggleTask(task) }
+                        }
+                        .onDelete(perform: viewModel.deleteTasks)
+                    }
+
+                case .error(let message):
+                    ContentUnavailableView("Sync Error", systemImage: "exclamationmark.triangle", description: Text(message))
+
+                case .cancelled:
+                    ContentUnavailableView("Sync Cancelled", systemImage: "xmark.circle", description: Text("The concurrent fetch was cancelled."))
+                }
+            }
+            .navigationTitle("Tasks (MVVM)")
+        }
+    }
+}
