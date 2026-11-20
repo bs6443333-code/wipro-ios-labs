@@ -1,0 +1,241 @@
+import SwiftUI
+import Combine
+
+// ============================================================================
+// Task 2: Codable Model Matching JSON Response
+// ============================================================================
+struct Post: Codable, Identifiable, Equatable, Sendable {
+    let userId: Int
+    let id: Int
+    let title: String
+    let body: String
+}
+
+// ============================================================================
+// Task 5: Custom Networking & Decoding Error Cases
+// ============================================================================
+enum NetworkError: LocalizedError, Equatable {
+    case invalidURL
+    case httpError(statusCode: Int)
+    case decodingFailed
+    case emptyResults
+    case networkFailure(String)
+
+    var errorDescription: String? {
+        switch self {
+        case .invalidURL:
+            return "The API endpoint URL is invalid."
+        case .httpError(let code):
+            return "Server returned an error (HTTP \(code))."
+        case .decodingFailed:
+            return "Failed to decode JSON response into Swift models."
+        case .emptyResults:
+            return "No posts were returned from the server."
+        case .networkFailure(let message):
+            return "Network request failed: \(message)"
+        }
+    }
+}
+
+// ============================================================================
+// Tasks 3, 5 & 7: Dedicated Networking Service (Separated from UI)
+// ============================================================================
+protocol URLSessionProtocol: Sendable {
+    func data(for request: URLRequest) async throws -> (Data, URLResponse)
+}
+
+extension URLSession: URLSessionProtocol {}
+
+protocol PostServiceProtocol: Sendable {
+    func fetchPosts(userId: Int?) async throws -> [Post]
+}
+
+final class PostAPIService: PostServiceProtocol {
+    private let baseURLString: String
+    private let session: URLSessionProtocol
+
+    init(
+        baseURLString: String = "https://jsonplaceholder.typicode.com/posts",
+        session: URLSessionProtocol = URLSession.shared
+    ) {
+        self.baseURLString = baseURLString
+        self.session = session
+    }
+
+    func fetchPosts(userId: Int? = nil) async throws -> [Post] {
+        // Task 3: Build URL safely with URLComponents and URLRequest
+        guard var components = URLComponents(string: baseURLString),
+              components.scheme != nil,
+              components.host != nil else {
+            throw NetworkError.invalidURL
+        }
+
+        if let userId = userId {
+            components.queryItems = [URLQueryItem(name: "userId", value: String(userId))]
+        }
+
+        guard let url = components.url else {
+            throw NetworkError.invalidURL
+        }
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "GET"
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+        request.timeoutInterval = 15
+
+        // Execute request with URLSession async/await
+        let data: Data
+        let response: URLResponse
+        do {
+            (data, response) = try await session.data(for: request)
+        } catch {
+            throw NetworkError.networkFailure(error.localizedDescription)
+        }
+
+        // Validate HTTP status code
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw NetworkError.networkFailure("Invalid server response.")
+        }
+        guard (200...299).contains(httpResponse.statusCode) else {
+            throw NetworkError.httpError(statusCode: httpResponse.statusCode)
+        }
+
+        // Task 4: Decode JSON response
+        let posts: [Post]
+        do {
+            posts = try JSONDecoder().decode([Post].self, from: data)
+        } catch {
+            throw NetworkError.decodingFailed
+        }
+
+        // Task 5: Handle empty results
+        guard !posts.isEmpty else {
+            throw NetworkError.emptyResults
+        }
+
+        return posts
+    }
+}
+
+// ============================================================================
+// Task 6: ViewModel Managing Loading, Success, and Retry States
+// ============================================================================
+enum LoadableState<T: Equatable>: Equatable {
+    case idle
+    case loading
+    case loaded(T)
+    case failed(NetworkError)
+}
+
+@MainActor
+final class PostListViewModel: ObservableObject {
+    @Published private(set) var state: LoadableState<[Post]> = .idle
+    @Published var selectedUserId: Int? = nil
+
+    private let service: PostServiceProtocol
+
+    init(service: PostServiceProtocol = PostAPIService()) {
+        self.service = service
+    }
+
+    func loadPosts() async {
+        state = .loading
+        do {
+            let fetched = try await service.fetchPosts(userId: selectedUserId)
+            state = .loaded(fetched)
+        } catch let netError as NetworkError {
+            state = .failed(netError)
+        } catch {
+            state = .failed(.networkFailure(error.localizedDescription))
+        }
+    }
+}
+
+// ============================================================================
+// Task 4 & 6: SwiftUI List View & Detail View with Retry Support
+// ============================================================================
+struct PostListView: View {
+    @StateObject private var viewModel = PostListViewModel()
+
+    var body: some View {
+        NavigationStack {
+            Group {
+                switch viewModel.state {
+                case .idle, .loading:
+                    ProgressView("Fetching posts...")
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+
+                case .loaded(let posts):
+                    List(posts) { post in
+                        NavigationLink(destination: PostDetailView(post: post)) {
+                            VStack(alignment: .leading, spacing: 6) {
+                                Text(post.title.capitalized)
+                                    .font(.headline)
+                                    .lineLimit(1)
+                                Text(post.body)
+                                    .font(.subheadline)
+                                    .foregroundColor(.secondary)
+                                    .lineLimit(2)
+                            }
+                            .padding(.vertical, 4)
+                        }
+                    }
+                    .refreshable {
+                        await viewModel.loadPosts()
+                    }
+
+                case .failed(let error):
+                    ContentUnavailableView {
+                        Label("Unable to Load Posts", systemImage: "wifi.exclamationmark")
+                    } description: {
+                        Text(error.localizedDescription)
+                    } actions: {
+                        Button("Retry") {
+                            Task { await viewModel.loadPosts() }
+                        }
+                        .buttonStyle(.borderedProminent)
+                    }
+                }
+            }
+            .navigationTitle("Public API Posts")
+            .task {
+                if case .idle = viewModel.state {
+                    await viewModel.loadPosts()
+                }
+            }
+        }
+    }
+}
+
+struct PostDetailView: View {
+    let post: Post
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 16) {
+                HStack {
+                    Label("Post #\(post.id)", systemImage: "doc.text")
+                    Spacer()
+                    Label("User \(post.userId)", systemImage: "person.circle")
+                }
+                .font(.caption)
+                .foregroundColor(.secondary)
+
+                Text(post.title.capitalized)
+                    .font(.title2.bold())
+
+                Divider()
+
+                Text(post.body)
+                    .font(.body)
+            }
+            .padding()
+        }
+        .navigationTitle("Post Details")
+        .navigationBarTitleDisplayMode(.inline)
+    }
+}
+
+#Preview {
+    PostListView()
+}
