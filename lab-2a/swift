@@ -1,0 +1,143 @@
+import Foundation
+
+// ==============================================================================
+// TASK 1 & 5: Reusable Functions with Clear Parameter Labels and Return Types
+// ==============================================================================
+
+func calculateMean(of numbers: [Double]) -> Double {
+    guard !numbers.isEmpty else { return 0.0 }
+    let sum = numbers.reduce(0.0, +)
+    return sum / Double(numbers.count)
+}
+
+func findMaximum(in numbers: [Double]) -> Double? {
+    guard var maxValue = numbers.first else { return nil }
+    for number in numbers.dropFirst() {
+        if number > maxValue {
+            maxValue = number
+        }
+    }
+    return maxValue
+}
+
+func isValidEmail(_ email: String) -> Bool {
+    let trimmed = email.trimmingCharacters(in: .whitespacesAndNewlines)
+    let parts = trimmed.split(separator: "@", omittingEmptySubsequences: false)
+    
+    // Must have exactly one '@' and non-empty local/domain parts
+    guard parts.count == 2, !parts[0].isEmpty, !parts[1].isEmpty else {
+        return false
+    }
+    
+    let domain = parts[1]
+    return domain.contains(".") && !domain.hasPrefix(".") && !domain.hasSuffix(".")
+}
+
+func formatDisplayName(firstName: String, lastName: String, title: String? = nil) -> String {
+    let cleanFirst = firstName.trimmingCharacters(in: .whitespacesAndNewlines).capitalized
+    let cleanLast = lastName.trimmingCharacters(in: .whitespacesAndNewlines).capitalized
+    
+    if let title = title?.trimmingCharacters(in: .whitespacesAndNewlines), !title.isEmpty {
+        return "\(title.capitalized) \(cleanFirst) \(cleanLast)"
+    }
+    return "\(cleanFirst) \(cleanLast)"
+}
+
+// ==============================================================================
+// TASK 2: Filter, Map, and Reduce on Transactions
+// ==============================================================================
+
+enum TransactionType {
+    case income
+    case expense
+}
+
+struct Transaction {
+    let id: Int
+    let type: TransactionType
+    let amount: Double
+}
+
+func calculateTotalExpenses(from transactions: [Transaction], taxRate: Double = 0.0) -> Double {
+    let total = transactions
+        .filter { $0.type == .expense }                  // 1. Filter expenses
+        .map { $0.amount * (1.0 + taxRate) }             // 2. Transform with tax
+        .reduce(0.0) { partialResult, amount in          // 3. Reduce to total
+            partialResult + amount
+        }
+    
+    return (total * 100).rounded() / 100
+}
+
+// ==============================================================================
+// TASK 3: Sort Students by Marks (Descending) and Name (Ascending for Ties)
+// ==============================================================================
+
+struct Student {
+    let name: String
+    let marks: Int
+}
+
+func sortStudents(_ students: [Student]) -> [Student] {
+    return students.sorted { first, second in
+        if first.marks != second.marks {
+            return first.marks > second.marks // Higher marks first
+        }
+        return first.name.localizedCaseInsensitiveCompare(second.name) == .orderedAscending
+    }
+}
+
+// ==============================================================================
+// TASK 4: Loop-Based vs. Higher-Order-Function Comparison
+// ==============================================================================
+
+func calculateTotalExpensesLoop(from transactions: [Transaction], taxRate: Double = 0.0) -> Double {
+    var total = 0.0
+    for transaction in transactions {
+        if transaction.type == .expense {
+            let taxedAmount = transaction.amount * (1.0 + taxRate)
+            total += taxedAmount
+        }
+    }
+    return (total * 100).rounded() / 100
+}
+
+// ==============================================================================
+// Driver Code to Verify Output
+// ==============================================================================
+
+// 1. Test Utility Functions
+let scores = [85.0, 92.5, 78.0, 96.0]
+print("Mean: \(calculateMean(of: scores))")
+print("Maximum: \(findMaximum(in: scores) ?? 0.0)")
+print("Valid Email: \(isValidEmail("bharat.kumar@example.com"))")
+print("Display Name: \(formatDisplayName(firstName: "  bharat ", lastName: " kumar", title: "mr."))")
+
+print(String(repeating: "-", count: 50))
+
+// 2. Test Higher-Order Functions on Transactions
+let transactions = [
+    Transaction(id: 1, type: .income, amount: 5000.0),
+    Transaction(id: 2, type: .expense, amount: 1200.0),
+    Transaction(id: 3, type: .expense, amount: 350.0),
+    Transaction(id: 4, type: .income, amount: 1500.0),
+    Transaction(id: 5, type: .expense, amount: 450.0)
+]
+
+print("Total Expenses (HOF): \(calculateTotalExpenses(from: transactions, taxRate: 0.10))")
+print("Total Expenses (Loop): \(calculateTotalExpensesLoop(from: transactions, taxRate: 0.10))")
+
+print(String(repeating: "-", count: 50))
+
+// 3. Test Sorting Students
+let students = [
+    Student(name: "Rohan", marks: 88),
+    Student(name: "Ananya", marks: 95),
+    Student(name: "Bharat", marks: 88),
+    Student(name: "Vikram", marks: 76)
+]
+
+print("Sorted Students:")
+for student in sortStudents(students) {
+    print("  \(student.name): \(student.marks)")
+}
