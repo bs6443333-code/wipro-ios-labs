@@ -1,0 +1,158 @@
+import Foundation
+
+// MARK: - Models & Errors
+struct CourseDetail: Sendable {
+    let id: String
+    let title: String
+    let credits: Int
+}
+
+enum CourseServiceError: Error, LocalizedError {
+    case courseNotFound(id: String)
+
+    var errorDescription: String? {
+        switch self {
+        case .courseNotFound(let id):
+            return "Course ID '\(id)' failed to load."
+        }
+    }
+}
+
+// MARK: - Task 1: Independent Async Fetch Simulation
+func fetchCourseDetail(id: String, delaySeconds: Double = 1.0, shouldFail: Bool = false) async throws -> CourseDetail {
+    try await Task.sleep(for: .seconds(delaySeconds))
+    try Task.checkCancellation()
+
+    if shouldFail {
+        throw CourseServiceError.courseNotFound(id: id)
+    }
+
+    let titles = [
+        "CS101": "Data Structures & Algorithms",
+        "CS102": "iOS App Development with Swift",
+        "CS103": "Operating Systems",
+        "CS104": "Database Management Systems"
+    ]
+    return CourseDetail(id: id, title: titles[id] ?? "Course \(id)", credits: 4)
+}
+
+// MARK: - Task 3: Sequential Fetch Implementation
+func fetchCoursesSequentially(ids: [String]) async throws -> [String: CourseDetail] {
+    var results: [String: CourseDetail] = [:]
+    for id in ids {
+        let detail = try await fetchCourseDetail(id: id, delaySeconds: 1.0)
+        results[id] = detail
+    }
+    return results
+}
+
+// MARK: - Task 2: Concurrent Fetch Using TaskGroup (Organised by Course ID)
+func fetchCoursesConcurrently(ids: [String]) async throws -> [String: CourseDetail] {
+    try await withThrowingTaskGroup(of: (String, CourseDetail).self) { group in
+        for id in ids {
+            group.addTask {
+                let detail = try await fetchCourseDetail(id: id, delaySeconds: 1.0)
+                return (id, detail)
+            }
+        }
+
+        var results: [String: CourseDetail] = [:]
+        for try await (id, detail) in group {
+            results[id] = detail
+        }
+        return results
+    }
+}
+
+// MARK: - Task 4: Child Failure Policy Comparison
+// Policy A (Fail-Fast): Whole operation fails if any child task throws
+func fetchFailFast(ids: [String], failingID: String) async throws -> [String: CourseDetail] {
+    try await withThrowingTaskGroup(of: (String, CourseDetail).self) { group in
+        for id in ids {
+            group.addTask {
+                let detail = try await fetchCourseDetail(id: id, delaySeconds: 1.0, shouldFail: id == failingID)
+                return (id, detail)
+            }
+        }
+
+        var results: [String: CourseDetail] = [:]
+        for try await (id, detail) in group {
+            results[id] = detail
+        }
+        return results
+    }
+}
+
+// Policy B (Partial Results): Captures Result per child so valid courses still succeed
+func fetchPartialResults(ids: [String], failingID: String) async -> (succeeded: [String: CourseDetail], failed: [String: String]) {
+    await withTaskGroup(of: (String, Result<CourseDetail, Error>).self) { group in
+        for id in ids {
+            group.addTask {
+                do {
+                    let detail = try await fetchCourseDetail(id: id, delaySeconds: 1.0, shouldFail: id == failingID)
+                    return (id, .success(detail))
+                } catch {
+                    return (id, .failure(error))
+                }
+            }
+        }
+
+        var succeeded: [String: CourseDetail] = [:]
+        var failed: [String: String] = [:]
+
+        for await (id, outcome) in group {
+            switch outcome {
+            case .success(let detail):
+                succeeded[id] = detail
+            case .failure(let error):
+                failed[id] = error.localizedDescription
+            }
+        }
+        return (succeeded, failed)
+    }
+}
+
+// MARK: - Runner & Timing Benchmark
+@main
+struct Lab5CRunner {
+    static func main() async {
+        let courseIDs = ["CS101", "CS102", "CS103", "CS104"]
+        let clock = ContinuousClock()
+
+        // 1. Sequential Benchmark
+        do {
+            let seqStart = clock.now
+            let seqResults = try await fetchCoursesSequentially(ids: courseIDs)
+            let seqDuration = clock.now - seqStart
+            print("Sequential Fetched \(seqResults.count) courses in: \(seqDuration)")
+        } catch {
+            print("Sequential Error: \(error)")
+        }
+
+        // 2. Concurrent Benchmark
+        do {
+            let concStart = clock.now
+            let concResults = try await fetchCoursesConcurrently(ids: courseIDs)
+            let concDuration = clock.now - concStart
+            print("Concurrent Fetched \(concResults.count) courses in: \(concDuration)")
+            for id in courseIDs {
+                if let c = concResults[id] {
+                    print("  - \(c.id): \(c.title) (\(c.credits) credits)")
+                }
+            }
+        } catch {
+            print("Concurrent Error: \(error)")
+        }
+
+        // 3. Child Failure Handling (Fail-Fast vs. Partial Results)
+        print("\n--- Testing Child Failure (CS103 fails) ---")
+        do {
+            _ = try await fetchFailFast(ids: courseIDs, failingID: "CS103")
+        } catch {
+            print("Fail-Fast Policy Aborted Entire Batch: \(error.localizedDescription)")
+        }
+
+        let partial = await fetchPartialResults(ids: courseIDs, failingID: "CS103")
+        print("Partial Results Policy -> Succeeded: \(partial.succeeded.keys.sorted()), Failed: \(partial.failed)")
+    }
+}
