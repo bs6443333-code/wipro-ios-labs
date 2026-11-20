@@ -1,0 +1,200 @@
+import SwiftUI
+import Combine
+
+// MARK: - Model & Simulated Fetch Modes
+struct Course: Identifiable, Equatable {
+    let id = UUID()
+    let title: String
+    let instructor: String
+}
+
+enum FetchScenario: String, CaseIterable, Identifiable {
+    case success = "Success"
+    case empty = "Empty"
+    case failure = "Failure"
+    var id: String { rawValue }
+}
+
+enum CourseFetchError: LocalizedError {
+    case networkUnavailable
+
+    var errorDescription: String? {
+        switch self {
+        case .networkUnavailable:
+            return "Unable to load courses. Check your connection and try again."
+        }
+    }
+}
+
+// MARK: - Task 3: Enum Representing All Four UI States
+enum LoadState: Equatable {
+    case idle
+    case loading
+    case success([Course])
+    case empty
+    case failure(String)
+}
+
+// MARK: - ViewModel with Async Function & Cancellation
+@MainActor
+final class CourseListViewModel: ObservableObject {
+    @Published private(set) var state: LoadState = .idle
+    @Published var selectedScenario: FetchScenario = .success
+
+    private var activeTask: Task<Void, Never>?
+
+    var isLoading: Bool {
+        if case .loading = state { return true }
+        return false
+    }
+
+    // Task 1: Async function simulating fetching a list of courses
+    func fetchCourses(scenario: FetchScenario) async throws -> [Course] {
+        // Simulate network latency (2 seconds); automatically throws CancellationError if cancelled
+        try await Task.sleep(for: .seconds(2))
+
+        // Task 4: Explicit cooperative cancellation check before processing result
+        try Task.checkCancellation()
+
+        switch scenario {
+        case .success:
+            return [
+                Course(title: "Swift Concurrency Mastery", instructor: "Aarav Sharma"),
+                Course(title: "Declarative UI with SwiftUI", instructor: "Meera Nair"),
+                Course(title: "iOS Architecture & MVVM", instructor: "Rohan Verma")
+            ]
+        case .empty:
+            return []
+        case .failure:
+            throw CourseFetchError.networkUnavailable
+        }
+    }
+
+    // Task 2: Call the async function from a Task and update UI only after result is ready
+    func startFetch() {
+        // Cancel any in-flight task before starting a new one
+        activeTask?.cancel()
+        state = .loading
+
+        let scenario = selectedScenario
+
+        activeTask = Task {
+            do {
+                let courses = try await fetchCourses(scenario: scenario)
+
+                // Guard against updating UI if cancelled right as result arrived
+                guard !Task.isCancelled else { return }
+
+                if courses.isEmpty {
+                    state = .empty
+                } else {
+                    state = .success(courses)
+                }
+            } catch is CancellationError {
+                state = .failure("Request was cancelled by user.")
+            } catch {
+                state = .failure(error.localizedDescription)
+            }
+        }
+    }
+
+    // Task 4: Cancel action
+    func cancelFetch() {
+        activeTask?.cancel()
+        activeTask = nil
+    }
+}
+
+// MARK: - SwiftUI View Demonstrating All Four States & Cancellation
+struct AsyncCoursesView: View {
+    @StateObject private var viewModel = CourseListViewModel()
+
+    var body: some View {
+        NavigationStack {
+            VStack(spacing: 16) {
+                // Scenario selector to demonstrate all states easily
+                Picker("Simulated Outcome", selection: $viewModel.selectedScenario) {
+                    ForEach(FetchScenario.allCases) { scenario in
+                        Text(scenario.rawValue).tag(scenario)
+                    }
+                }
+                .pickerStyle(.segmented)
+                .padding(.horizontal)
+
+                // Action Buttons: Fetch & Cancel
+                HStack(spacing: 12) {
+                    Button("Load Courses") {
+                        viewModel.startFetch()
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .disabled(viewModel.isLoading)
+
+                    Button("Cancel", role: .destructive) {
+                        viewModel.cancelFetch()
+                    }
+                    .buttonStyle(.bordered)
+                    .disabled(!viewModel.isLoading)
+                }
+
+                Divider()
+
+                // State-driven UI rendering (Task 3)
+                Group {
+                    switch viewModel.state {
+                    case .idle:
+                        ContentUnavailableView(
+                            "Ready to Load",
+                            systemImage: "arrow.down.circle",
+                            description: Text("Choose a scenario above and tap 'Load Courses'.")
+                        )
+
+                    case .loading:
+                        VStack(spacing: 12) {
+                            ProgressView()
+                                .controlSize(.large)
+                            Text("Fetching courses...")
+                                .foregroundColor(.secondary)
+                        }
+                        .frame(maxHeight: .infinity)
+
+                    case .success(let courses):
+                        List(courses) { course in
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text(course.title)
+                                    .font(.headline)
+                                Text("Instructor: \(course.instructor)")
+                                    .font(.subheadline)
+                                    .foregroundColor(.secondary)
+                            }
+                        }
+
+                    case .empty:
+                        ContentUnavailableView(
+                            "No Courses Available",
+                            systemImage: "tray",
+                            description: Text("The catalog returned an empty list.")
+                        )
+
+                    case .failure(let message):
+                        ContentUnavailableView {
+                            Label("Load Failed", systemImage: "exclamationmark.triangle")
+                        } description: {
+                            Text(message)
+                        } actions: {
+                            Button("Retry") {
+                                viewModel.startFetch()
+                            }
+                            .buttonStyle(.bordered)
+                        }
+                    }
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            }
+            .navigationTitle("Courses (Async/Await)")
+        }
+    }
+}
+
+#Preview {
+    AsyncCoursesView()
+}
