@@ -1,0 +1,183 @@
+import Foundation
+
+// ==============================================================================
+// TASK 1: Define `ValidationError` Conforming to `Error`
+// ==============================================================================
+
+enum ValidationError: Error, Equatable {
+    case emptyName
+    case invalidMark(mark: Double)
+    case invalidID(id: String)
+}
+
+// ==============================================================================
+// TASK 2: Throwing Student-Registration Function
+// ==============================================================================
+
+struct Student {
+    let id: String
+    let name: String
+    let mark: Double
+}
+
+/// Validates student details and registers a new `Student` instance.
+/// Throws specific `ValidationError` cases instead of crashing on invalid input.
+func registerStudent(id: String, name: String, mark: Double) throws -> Student {
+    let cleanID = id.trimmingCharacters(in: .whitespacesAndNewlines)
+    let cleanName = name.trimmingCharacters(in: .whitespacesAndNewlines)
+    
+    // Validate ID: must be 10 numeric digits (e.g., "2315000599")
+    let isNumeric = !cleanID.isEmpty && cleanID.allSatisfy(\.isNumber)
+    guard cleanID.count == 10 && isNumeric else {
+        throw ValidationError.invalidID(id: id)
+    }
+    
+    // Validate Name: must not be empty
+    guard !cleanName.isEmpty else {
+        throw ValidationError.emptyName
+    }
+    
+    // Validate Mark: must be within 0.0...100.0
+    guard (0.0...100.0).contains(mark) else {
+        throw ValidationError.invalidMark(mark: mark)
+    }
+    
+    return Student(id: cleanID, name: cleanName, mark: mark)
+}
+
+// ==============================================================================
+// TASK 3 & 5: Handle Errors with `do/catch` Safely (No Crashes on Bad Input)
+// ==============================================================================
+
+func attemptRegistration(id: String, name: String, mark: Double) {
+    do {
+        let student = try registerStudent(id: id, name: name, mark: mark)
+        print("SUCCESS: Registered \(student.name) [ID: \(student.id)] with mark \(student.mark).")
+    } catch ValidationError.emptyName {
+        print("ERROR (Empty Name): Student name cannot be blank. Please enter a valid name.")
+    } catch ValidationError.invalidMark(let badMark) {
+        print("ERROR (Invalid Mark): '\(badMark)' is out of range. Marks must be between 0 and 100.")
+    } catch ValidationError.invalidID(let badID) {
+        print("ERROR (Invalid ID): '\(badID)' is invalid. ID must be a 10-digit numeric roll number.")
+    } catch {
+        print("ERROR (Unexpected): \(error.localizedDescription)")
+    }
+}
+
+print("--- Task 3 & 5: Testing Student Registration Cases ---")
+attemptRegistration(id: "2315000599", name: "Bharat Kumar", mark: 92.5) // Valid
+attemptRegistration(id: "2315000599", name: "   ", mark: 85.0)          // Empty name
+attemptRegistration(id: "2315000599", name: "Ananya", mark: 108.0)      // Invalid mark (> 100)
+attemptRegistration(id: "2315000599", name: "Rohan", mark: -5.0)        // Invalid mark (< 0)
+attemptRegistration(id: "ABC123", name: "Vikram", mark: 78.0)           // Invalid ID
+
+print(String(repeating: "-", count: 55))
+
+// ==============================================================================
+// TASK 4: Comparison of `throws`, Optional Return (`T?`), and `Result<T, Error>`
+// ==============================================================================
+
+/*
+ COMPARISON (Task 4):
+ Example scenario: Parsing or looking up a student's exam score.
+
+ 1. Optional Return (`func parseMark(_ text: String) -> Double?`):
+    - Best when there is only ONE obvious reason for failure (e.g., "not a number" or "not found").
+    - Lightweight (`if let` / `guard let`), but discards *why* the operation failed.
+
+ 2. Throwing Function (`func registerStudent(...) throws -> Student`):
+    - Best for multi-step validation or synchronous workflows with MULTIPLE failure reasons
+      (`emptyName`, `invalidMark`, `invalidID`).
+    - Propagates errors automatically via `try`, forcing callers to handle failures with `do/catch`.
+
+ 3. `Result<Student, ValidationError>`:
+    - Best for asynchronous callbacks, storing an outcome for later inspection, or functional
+      chaining (`.map`, `.mapError`) without immediate `do/catch` control flow.
+*/
+
+// Example demonstrating all three approaches for parsing a mark:
+func parseMarkOptional(_ input: String) -> Double? {
+    guard let value = Double(input), (0.0...100.0).contains(value) else { return nil }
+    return value
+}
+
+func parseMarkThrowing(_ input: String) throws -> Double {
+    guard let value = Double(input), (0.0...100.0).contains(value) else {
+        throw ValidationError.invalidMark(mark: -1)
+    }
+    return value
+}
+
+func parseMarkResult(_ input: String) -> Result<Double, ValidationError> {
+    guard let value = Double(input), (0.0...100.0).contains(value) else {
+        return .failure(.invalidMark(mark: -1))
+    }
+    return .success(value)
+}
+
+print("--- Task 4: Optional vs. Throws vs. Result ---")
+print("Optional result for '88.5': \(String(describing: parseMarkOptional("88.5")))")
+print("Throwing result for '88.5': \((try? parseMarkThrowing("88.5")) ?? 0.0)")
+print("Result type for 'invalid':  \(parseMarkResult("invalid"))")
+
+print(String(repeating: "-", count: 55))
+
+// ==============================================================================
+// EXTENSION (OPTIONAL): Simulated Network Response Wrapped in `Result`
+// ==============================================================================
+
+enum NetworkError: Error {
+    case noInternet
+    case serverError(statusCode: Int)
+    case decodingFailed
+}
+
+struct APIResponse {
+    let payload: String
+}
+
+/// Simulates a network request returning `Result<APIResponse, NetworkError>`
+func fetchStudentProfile(statusCode: Int) -> Result<APIResponse, NetworkError> {
+    switch statusCode {
+    case 200:
+        return .success(APIResponse(payload: "{ \"id\": \"2315000599\", \"status\": \"Active\" }"))
+    case 0:
+        return .failure(.noInternet)
+    case 500...599:
+        return .failure(.serverError(statusCode: statusCode))
+    default:
+        return .failure(.decodingFailed)
+    }
+}
+
+/// Transforms technical `NetworkError` values into user-friendly messages
+func displayNetworkOutcome(for statusCode: Int) {
+    let result = fetchStudentProfile(statusCode: statusCode)
+    
+    let friendlyResult: Result<String, NSError> = result.mapError { netError in
+        let userMessage: String
+        switch netError {
+        case .noInternet:
+            userMessage = "You appear to be offline. Check your connection and try again."
+        case .serverError(let code):
+            userMessage = "Our servers are temporarily busy (Error \(code)). Please retry shortly."
+        case .decodingFailed:
+            userMessage = "Received unreadable data from the server."
+        }
+        return NSError(domain: "AppNetwork", code: statusCode, userInfo: [NSLocalizedDescriptionKey: userMessage])
+    }.map { response in
+        return "Loaded Profile -> \(response.payload)"
+    }
+    
+    switch friendlyResult {
+    case .success(let message):
+        print("Network OK: \(message)")
+    case .failure(let friendlyError):
+        print("User Alert: \(friendlyError.localizedDescription)")
+    }
+}
+
+print("--- Optional Extension: Network Result & Friendly Error Mapping ---")
+displayNetworkOutcome(for: 200)
+displayNetworkOutcome(for: 0)
+displayNetworkOutcome(for: 503)
