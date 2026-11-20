@@ -1,0 +1,176 @@
+import Foundation
+
+// ==============================================================================
+// TASK 1: Define Protocol `Displayable` and Conform `Student` & `Course`
+// ==============================================================================
+
+protocol Displayable {
+    var displayTitle: String { get }
+    func summary() -> String
+}
+
+struct Student: Displayable {
+    let id: String
+    let name: String
+    let cgpa: Double
+    
+    var displayTitle: String {
+        return "\(name) (\(id))"
+    }
+    
+    func summary() -> String {
+        return "Student: \(displayTitle) | CGPA: \(String(format: "%.2f", cgpa))"
+    }
+}
+
+struct Course: Displayable {
+    let code: String
+    let title: String
+    let credits: Int
+    
+    var displayTitle: String {
+        return "\(code): \(title)"
+    }
+    
+    func summary() -> String {
+        return "Course: \(displayTitle) | Credits: \(credits)"
+    }
+}
+
+// ==============================================================================
+// TASK 2: Extension Adding a Computed Property and Helper to an Existing Type
+// ==============================================================================
+
+extension String {
+    /// Computed property that returns true if the string has non-whitespace characters
+    var isNotBlank: Bool {
+        return !self.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+    
+    /// Helper method to truncate long text cleanly with an ellipsis
+    func truncated(to maxLength: Int) -> String {
+        guard maxLength > 0, self.count > maxLength else { return self }
+        return String(self.prefix(maxLength)) + "..."
+    }
+}
+
+extension Array where Element: Numeric {
+    /// Computed property to calculate the sum of numeric array elements
+    var totalSum: Element {
+        return reduce(0, +)
+    }
+}
+
+// ==============================================================================
+// TASK 3: Generic `Stack<T>` with `push`, `pop`, `peek`, and `isEmpty`
+// ==============================================================================
+
+struct Stack<T> {
+    private var storage: [T] = []
+    
+    var isEmpty: Bool {
+        return storage.isEmpty
+    }
+    
+    var count: Int {
+        return storage.count
+    }
+    
+    mutating func push(_ element: T) {
+        storage.append(element)
+    }
+    
+    @discardableResult
+    mutating func pop() -> T? {
+        return storage.popLast()
+    }
+    
+    func peek() -> T? {
+        return storage.last
+    }
+}
+
+// ==============================================================================
+// TASK 4: Generic Function with Protocol Constraint (Valid vs. Invalid Use)
+// ==============================================================================
+
+/// Generic function constrained to types conforming to `Displayable`
+func formatAllItems<T: Displayable>(_ items: [T]) -> [String] {
+    return items.map { $0.summary() }
+}
+
+/// Another constrained generic helper requiring `Equatable`
+func containsItem<T: Equatable>(_ target: T, in collection: [T]) -> Bool {
+    return collection.contains(target)
+}
+
+// A type that intentionally does NOT conform to `Displayable`
+struct RawScore {
+    let value: Int
+}
+
+// ==============================================================================
+// TASK 5: Why an Extension Cannot Replace a New Type for Stored State
+// ==============================================================================
+
+/*
+ EXPLANATION (Task 5):
+ In Swift, extensions can add computed properties, methods, initializers, subscripts,
+ and protocol conformances to an existing type, but they CANNOT add stored properties
+ (or property observers on existing stored properties).
+
+ Why? Because adding stored properties changes the memory footprint and layout of
+ every instance of that type—including types imported from external frameworks or
+ the Swift standard library—which breaks ABI stability and compile-time memory allocation.
+
+ Therefore, whenever a feature requires maintaining new per-instance stored state
+ (such as `Stack<T>` holding `private var storage: [T]`), you must define a new
+ `struct`, `class`, or `actor` rather than extending an existing type.
+*/
+
+// ==============================================================================
+// WHAT TO SUBMIT: Compiling Project & Assertions / Example Checks (8 Checks)
+// ==============================================================================
+
+// 1. Check Task 1: Protocol conformance for Student and Course
+let bharat = Student(id: "2315000599", name: "Bharat Kumar", cgpa: 9.15)
+let swiftCourse = Course(code: "CS302", title: "iOS & Swift Programming", credits: 4)
+
+assert(bharat.summary() == "Student: Bharat Kumar (2315000599) | CGPA: 9.15", "Student summary mismatch")
+assert(swiftCourse.summary() == "Course: CS302: iOS & Swift Programming | Credits: 4", "Course summary mismatch")
+print("Check 1 & 2 Passed: Displayable conformance works for Student and Course.")
+
+// 2. Check Task 2: String and Array extensions
+assert("   ".isNotBlank == false, "Blank string check failed")
+assert("Swift Generics".truncated(to: 5) == "Swift...", "String truncation failed")
+assert([10, 20, 30, 40].totalSum == 100, "Numeric array totalSum failed")
+print("Check 3, 4 & 5 Passed: Extensions on String and Array work as expected.")
+
+// 3. Check Task 3: Generic Stack<T> operations
+var intStack = Stack<Int>()
+assert(intStack.isEmpty == true, "New stack should be empty")
+intStack.push(100)
+intStack.push(200)
+assert(intStack.peek() == 200, "Peek should return top element (200)")
+assert(intStack.pop() == 200, "Pop should remove and return 200")
+assert(intStack.peek() == 100, "Peek should now return 100")
+assert(intStack.isEmpty == false, "Stack should not be empty")
+print("Check 6 & 7 Passed: Generic Stack<Int> push, pop, peek, and isEmpty verified.")
+
+// 4. Check Task 4: Constrained generic function (Valid vs. Invalid use)
+let courseList = [
+    swiftCourse,
+    Course(code: "CS305", title: "Data Structures & Algorithms", credits: 4)
+]
+
+// VALID USE: `Course` conforms to `Displayable`, so `formatAllItems` compiles and runs.
+let formattedCourses = formatAllItems(courseList)
+assert(formattedCourses.count == 2, "Expected 2 formatted course summaries")
+print("Check 8 Passed: Valid generic call output -> \(formattedCourses)")
+
+// INVALID USE (Compile-time error if uncommented):
+// let rawScores = [RawScore(value: 95), RawScore(value: 88)]
+// let invalidCall = formatAllItems(rawScores)
+// Compiler Error: Global function 'formatAllItems' requires that 'RawScore' conform to 'Displayable'
+
+print("\nAll 8 assertions passed successfully!")
