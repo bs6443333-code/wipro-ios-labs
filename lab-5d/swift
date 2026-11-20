@@ -1,0 +1,62 @@
+import Foundation
+
+// ============================================================================
+// BEFORE (Task 1): Unsafe Shared Mutable Class (Data Race)
+// ============================================================================
+// Note: Marked @unchecked Sendable only to compile under Swift 6 strict concurrency
+// so the runtime race condition can be demonstrated. Without it, the compiler
+// emits a concurrency warning/error for capturing non-Sendable mutable state.
+final class UnsafeCounter: @unchecked Sendable {
+    var count: Int = 0
+
+    func increment() {
+        // Non-atomic read-modify-write: two threads can read the same value
+        // simultaneously and overwrite each other's updates.
+        count += 1
+    }
+}
+
+// ============================================================================
+// AFTER (Task 2): Safe Synchronization Using an Actor
+// ============================================================================
+actor SafeCounter {
+    private(set) var count: Int = 0
+
+    func increment() {
+        // Actor isolation guarantees mutually exclusive access to 'count'.
+        count += 1
+    }
+}
+
+// ============================================================================
+// Execution & Comparison
+// ============================================================================
+@main
+struct DataRaceLabRunner {
+    static func main() async {
+        let iterations = 10_000
+
+        // 1. Run Unsafe Version
+        let unsafeCounter = UnsafeCounter()
+        await withTaskGroup(of: Void.self) { group in
+            for _ in 0..<iterations {
+                group.addTask {
+                    unsafeCounter.increment()
+                }
+            }
+        }
+        print("Expected: \(iterations) | Unsafe Counter Result: \(unsafeCounter.count)")
+
+        // 2. Run Safe Actor Version
+        let safeCounter = SafeCounter()
+        await withTaskGroup(of: Void.self) { group in
+            for _ in 0..<iterations {
+                group.addTask {
+                    await safeCounter.increment()
+                }
+            }
+        }
+        let finalSafeCount = await safeCounter.count
+        print("Expected: \(iterations) | Safe Actor Counter Result: \(finalSafeCount)")
+    }
+}
