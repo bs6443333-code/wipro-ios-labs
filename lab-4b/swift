@@ -1,0 +1,137 @@
+import SwiftUI
+import Combine
+
+// MARK: - Shared Event Logger
+final class LifecycleLogger: ObservableObject {
+    @Published private(set) var logs: [String] = []
+
+    func log(_ message: String) {
+        let timestamp = DateFormatter.localizedString(from: Date(), dateStyle: .none, timeStyle: .medium)
+        let entry = "[\(timestamp)] \(message)"
+        print(entry)
+        DispatchQueue.main.async {
+            self.logs.append(entry)
+        }
+    }
+
+    func clear() {
+        logs.removeAll()
+    }
+}
+
+// MARK: - App & Scene Lifecycle Logging (Task 1)
+@main
+struct LifecycleLabApp: App {
+    @Environment(\.scenePhase) private var scenePhase
+    @StateObject private var logger = LifecycleLogger()
+
+    init() {
+        print("[Init] LifecycleLabApp initialized")
+    }
+
+    var body: some Scene {
+        WindowGroup {
+            HomeLifecycleView()
+                .environmentObject(logger)
+        }
+        .onChange(of: scenePhase) { oldPhase, newPhase in
+            logger.log("ScenePhase changed: \(oldPhase) -> \(newPhase)")
+        }
+    }
+}
+
+// MARK: - Screen 1: Home Screen (Tasks 2, 3, 4 & 5)
+struct HomeLifecycleView: View {
+    @EnvironmentObject private var logger: LifecycleLogger
+    @State private var refreshCount: Int = 0
+    @State private var lastRefreshedAt: String = "Never"
+
+    var body: some View {
+        NavigationStack {
+            VStack(spacing: 16) {
+                // Lightweight refresh display (Task 4)
+                VStack(spacing: 4) {
+                    Text("Home Screen")
+                        .font(.title2.bold())
+                    Text("Lightweight Refresh Count: \(refreshCount)")
+                        .font(.subheadline)
+                    Text("Last Refreshed: \(lastRefreshedAt)")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+                .padding()
+                .frame(maxWidth: .infinity)
+                .background(Color(.secondarySystemBackground))
+                .cornerRadius(12)
+
+                // Navigation to Screen 2 (Task 3)
+                NavigationLink("Go to Detail Screen") {
+                    DetailLifecycleView()
+                }
+                .buttonStyle(.borderedProminent)
+
+                // Live Event Log Console
+                HStack {
+                    Text("Lifecycle Event Log")
+                        .font(.headline)
+                    Spacer()
+                    Button("Clear") {
+                        logger.clear()
+                    }
+                    .font(.caption)
+                }
+
+                List(logger.logs, id: \.self) { entry in
+                    Text(entry)
+                        .font(.system(.caption, design: .monospaced))
+                }
+                .listStyle(.plain)
+            }
+            .padding()
+            .navigationTitle("Lab 4B: Lifecycle")
+            // View Appearance / Disappearance Callbacks (Task 2)
+            .onAppear {
+                logger.log("HomeView -> onAppear fired")
+                performLightweightRefresh()
+            }
+            .onDisappear {
+                logger.log("HomeView -> onDisappear fired")
+            }
+        }
+    }
+
+    // Task 4: Lightweight refresh placed in onAppear instead of init()
+    private func performLightweightRefresh() {
+        refreshCount += 1
+        lastRefreshedAt = DateFormatter.localizedString(from: Date(), dateStyle: .none, timeStyle: .medium)
+        logger.log("HomeView -> Lightweight refresh executed (#\(refreshCount))")
+    }
+}
+
+// MARK: - Screen 2: Detail Screen (Tasks 2 & 3)
+struct DetailLifecycleView: View {
+    @EnvironmentObject private var logger: LifecycleLogger
+
+    var body: some View {
+        VStack(spacing: 16) {
+            Text("Detail Screen")
+                .font(.title2.bold())
+            Text("Navigate back to observe HomeView's repeated onAppear behavior.")
+                .multilineTextAlignment(.center)
+                .foregroundColor(.secondary)
+                .padding(.horizontal)
+        }
+        .navigationTitle("Detail")
+        .onAppear {
+            logger.log("DetailView -> onAppear fired")
+        }
+        .onDisappear {
+            logger.log("DetailView -> onDisappear fired")
+        }
+    }
+}
+
+#Preview {
+    HomeLifecycleView()
+        .environmentObject(LifecycleLogger())
+}
