@@ -1,0 +1,145 @@
+import UIKit
+
+class ConcurrencyLabViewController: UIViewController {
+
+    private var isFetching = false
+
+    // MARK: - UI Elements
+    private let titleLabel: UILabel = {
+        let label = UILabel()
+        label.text = "GCD Concurrency Lab"
+        label.font = .systemFont(ofSize: 24, weight: .bold)
+        label.textAlignment = .center
+        return label
+    }()
+
+    private let statusLabel: UILabel = {
+        let label = UILabel()
+        label.text = "Tap 'Fetch Data' to start background work"
+        label.font = .systemFont(ofSize: 16)
+        label.textColor = .secondaryLabel
+        label.textAlignment = .center
+        label.numberOfLines = 0
+        return label
+    }()
+
+    private let activityIndicator: UIActivityIndicatorView = {
+        let indicator = UIActivityIndicatorView(style: .large)
+        indicator.hidesWhenStopped = true
+        return indicator
+    }()
+
+    private let fetchButton: UIButton = {
+        var config = UIButton.Configuration.filled()
+        config.title = "Fetch Data"
+        return UIButton(configuration: config)
+    }()
+
+    private let responsivenessSlider: UISlider = {
+        let slider = UISlider()
+        slider.minimumValue = 0
+        slider.maximumValue = 100
+        slider.value = 50
+        return slider
+    }()
+
+    private let logTextView: UITextView = {
+        let tv = UITextView()
+        tv.isEditable = false
+        tv.font = .monospacedSystemFont(ofSize: 12, weight: .regular)
+        tv.backgroundColor = .secondarySystemBackground
+        tv.layer.cornerRadius = 8
+        return tv
+    }()
+
+    // MARK: - Lifecycle
+    override func viewDidLoad() {
+        super.viewDidLoad()
+        view.backgroundColor = .systemBackground
+        setupLayout()
+        fetchButton.addTarget(self, action: #selector(didTapFetch), for: .touchUpInside)
+        logThread("viewDidLoad initialized UI")
+    }
+
+    private func setupLayout() {
+        let sliderHint = UILabel()
+        sliderHint.text = "Drag slider during fetch to verify main thread stays responsive:"
+        sliderHint.font = .systemFont(ofSize: 12)
+        sliderHint.textColor = .tertiaryLabel
+        sliderHint.textAlignment = .center
+
+        let stack = UIStackView(arrangedSubviews: [
+            titleLabel,
+            statusLabel,
+            activityIndicator,
+            fetchButton,
+            sliderHint,
+            responsivenessSlider,
+            logTextView
+        ])
+        stack.axis = .vertical
+        stack.spacing = 14
+        stack.translatesAutoresizingMaskIntoConstraints = false
+
+        view.addSubview(stack)
+        NSLayoutConstraint.activate([
+            stack.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 20),
+            stack.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 20),
+            stack.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -20),
+            stack.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor, constant: -20)
+        ])
+    }
+
+    // MARK: - Task 5: Thread & Queue Logging Helper
+    private func logThread(_ step: String) {
+        let isMain = Thread.isMainThread
+        let queueName = String(cString: __dispatch_queue_get_label(nil), encoding: .utf8) ?? "unknown"
+        let threadInfo = isMain ? "Main Thread" : "Background Thread (\(Thread.current))"
+        let entry = "[\(step)]\n  -> \(threadInfo) | Queue: \(queueName)\n"
+        print(entry)
+
+        DispatchQueue.main.async {
+            self.logTextView.text += entry + "\n"
+        }
+    }
+
+    // MARK: - Tasks 1, 2, 3 & 4: Background Execution & UI Updates
+    @objc private func didTapFetch() {
+        // Task 4: Guard against duplicate submissions while work is running
+        guard !isFetching else { return }
+        isFetching = true
+
+        // Task 4: Show loading indicator & disable button on Main Queue
+        fetchButton.isEnabled = false
+        activityIndicator.startAnimating()
+        statusLabel.text = "Processing heavy task on background queue..."
+        logThread("1. Button Tapped (UI locked)")
+
+        // Task 1 & 2: Offload slow computation to DispatchQueue.global
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            guard let self = self else { return }
+            self.logThread("2. Started slow work")
+
+            // Simulate CPU/I/O delay (2 seconds) without blocking main thread
+            Thread.sleep(forTimeInterval: 2.0)
+            let computedResult = (1...1_000_000).reduce(0, +)
+
+            self.logThread("3. Finished computation, scheduling delayed response")
+
+            // Task 3: Use DispatchQueue.asyncAfter to simulate an additional 1-second network/API delay
+            DispatchQueue.global(qos: .userInitiated).asyncAfter(deadline: .now() + 1.0) { [weak self] in
+                guard let self = self else { return }
+                self.logThread("4. asyncAfter delay completed")
+
+                // Task 2: Hop back to DispatchQueue.main for all UI updates
+                DispatchQueue.main.async {
+                    self.statusLabel.text = "Completed! Sum = \(computedResult)"
+                    self.activityIndicator.stopAnimating()
+                    self.fetchButton.isEnabled = true
+                    self.isFetching = false
+                    self.logThread("5. UI updated & unlocked")
+                }
+            }
+        }
+    }
+}
