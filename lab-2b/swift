@@ -1,0 +1,177 @@
+import Foundation
+
+// ==============================================================================
+// TASK 1: Sort a List of Students with a Closure
+// ==============================================================================
+
+struct Student {
+    let name: String
+    let gpa: Double
+}
+
+let students = [
+    Student(name: "Rohan", gpa: 8.6),
+    Student(name: "Ananya", gpa: 9.4),
+    Student(name: "Bharat", gpa: 9.1),
+    Student(name: "Vikram", gpa: 8.2)
+]
+
+// Passing behavior as a value: `sorted(by:)` accepts a closure `(Student, Student) -> Bool`
+let sortedByGPA = students.sorted(by: { (first: Student, second: Student) -> Bool in
+    return first.gpa > second.gpa
+})
+
+print("Task 1 - Sorted by GPA:")
+for student in sortedByGPA {
+    print("  \(student.name): \(student.gpa)")
+}
+
+print(String(repeating: "-", count: 50))
+
+// ==============================================================================
+// TASK 2: Function Accepting a Completion Closure After a Simulated Operation
+// ==============================================================================
+
+/// Simulates fetching data and triggers `completion` once finished.
+/// `@escaping` is required when a closure outlives the function scope (e.g., async dispatch),
+/// though for synchronous execution here a non-escaping closure suffices.
+func performDataSync(taskName: String, completion: (Result<String, Error>) -> Void) {
+    print("Task 2 - Starting operation: \(taskName)...")
+    
+    // Simulate processing work
+    let isSuccess = !taskName.isEmpty
+    
+    if isSuccess {
+        completion(.success("Synced '\(taskName)' successfully."))
+    } else {
+        let error = NSError(domain: "SyncError", code: 400, userInfo: [NSLocalizedDescriptionKey: "Task name cannot be empty."])
+        completion(.failure(error))
+    }
+}
+
+performDataSync(taskName: "StudentRecords") { result in
+    switch result {
+    case .success(let message):
+        print("  Completion called -> \(message)")
+    case .failure(let error):
+        print("  Completion failed -> \(error.localizedDescription)")
+    }
+}
+
+print(String(repeating: "-", count: 50))
+
+// ==============================================================================
+// TASK 3: Trailing-Closure Syntax + Shorthand vs. Explicit Argument Names
+// ==============================================================================
+
+// 3A. Trailing-closure syntax with shorthand argument names ($0, $1)
+// Because the closure is the final parameter of `sorted(by:)`, we drop `by:` and parentheses,
+// and Swift infers the parameter types and return type automatically.
+let sortedShorthand = students.sorted { $0.name < $1.name }
+
+// 3B. Same logic rewritten with explicit parameter names and return type
+let sortedExplicit = students.sorted(by: { (studentA: Student, studentB: Student) -> Bool in
+    return studentA.name < studentB.name
+})
+
+print("Task 3 - Shorthand vs Explicit Names:")
+print("  Shorthand: \(sortedShorthand.map { $0.name })")
+print("  Explicit:  \(sortedExplicit.map { $0.name })")
+
+print(String(repeating: "-", count: 50))
+
+// ==============================================================================
+// TASK 4: Counter Closure and Captured State
+// ==============================================================================
+
+/// Creates and returns a closure `() -> Int` that maintains its own private state.
+///
+/// CAPTURE EXPLANATION:
+/// `currentCount` is declared inside `makeCounter(startingAt:step:)`, which would normally
+/// be destroyed when the function returns. However, because the returned closure references
+/// `currentCount`, Swift captures it by reference on the heap. Each call to `makeCounter`
+/// allocates a separate captured box, so independent counters do not interfere with each other.
+func makeCounter(startingAt start: Int = 0, step: Int = 1) -> () -> Int {
+    var currentCount = start
+    
+    return {
+        currentCount += step
+        return currentCount
+    }
+}
+
+let counterA = makeCounter(startingAt: 0, step: 1)
+let counterB = makeCounter(startingAt: 10, step: 5)
+
+print("Task 4 - Captured State:")
+print("  Counter A: \(counterA()), \(counterA()), \(counterA())") // 1, 2, 3
+print("  Counter B: \(counterB()), \(counterB())")               // 15, 20
+
+print(String(repeating: "-", count: 50))
+
+// ==============================================================================
+// TASK 5: Avoiding Retain Cycles with Capture Lists (`[weak self]`)
+// ==============================================================================
+
+/// LIFETIME & RETAIN CYCLE EXPLANATION:
+/// `DataDownloader` holds a strong reference to `onComplete` (stored property).
+/// If `onComplete` captures `self` strongly, `self` -> `onComplete` -> `self` forms a
+/// strong reference cycle, preventing ARC from ever deallocating `DataDownloader` (memory leak).
+/// Using `[weak self]` makes the closure's reference to `self` optional and non-owning,
+/// breaking the cycle so `deinit` runs cleanly when the object goes out of scope.
+class DataDownloader {
+    let url: String
+    var onComplete: (() -> Void)?
+    
+    init(url: String) {
+        self.url = url
+        print("Task 5 - DataDownloader initialized for \(url)")
+    }
+    
+    func configureHandler() {
+        // Capture list `[weak self]` prevents a strong reference cycle
+        onComplete = { [weak self] in
+            guard let self = self else {
+                print("  Downloader was already deallocated.")
+                return
+            }
+            print("  Finished downloading from \(self.url)")
+        }
+    }
+    
+    func start() {
+        configureHandler()
+        onComplete?()
+    }
+    
+    deinit {
+        print("Task 5 - DataDownloader deallocated cleanly (no retain cycle)!")
+    }
+}
+
+do {
+    let downloader = DataDownloader(url: "https://api.example.com/labs/2b")
+    downloader.start()
+} // `downloader` leaves scope here and `deinit` fires immediately
+
+print(String(repeating: "-", count: 50))
+
+// ==============================================================================
+// EXTENSION (OPTIONAL): Retry Helper Accepting an Operation Closure
+// ==============================================================================
+
+/// Executes a throwing `operation` closure up to `maxAttempts` times until it succeeds.
+@discardableResult
+func retry<T>(maxAttempts: Int, operation: () throws -> T) throws -> T {
+    precondition(maxAttempts >= 1, "maxAttempts must be at least 1")
+    
+    var lastError: Error?
+    
+    for attempt in 1...maxAttempts {
+        do {
+            return try operation()
+        } catch {
+            lastError = error
+            print("  Attempt \(attempt) failed: \(error.localizedDescription)")
+        }
+    }
