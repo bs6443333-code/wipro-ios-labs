@@ -1,0 +1,296 @@
+import UIKit
+
+// ============================================================================
+// Screen 1: Controls, Live Summary Panel & Lifecycle Logging (Tasks 1, 2, 3 & 5)
+// ============================================================================
+final class ControlSummaryViewController: UIViewController, UITextFieldDelegate {
+
+    // Task 1: Five UIKit Controls (UITextField, UISegmentedControl, UISlider, UISwitch, UIButton)
+    private let nameTextField: UITextField = {
+        let tf = UITextField()
+        tf.placeholder = "Enter session title..."
+        tf.borderStyle = .roundedRect
+        tf.returnKeyType = .done
+        return tf
+    }()
+
+    private let prioritySegment: UISegmentedControl = {
+        let sc = UISegmentedControl(items: ["Low", "Medium", "High"])
+        sc.selectedSegmentIndex = 1
+        return sc
+    }()
+
+    private let hoursSlider: UISlider = {
+        let slider = UISlider()
+        slider.minimumValue = 1
+        slider.maximumValue = 8
+        slider.value = 3
+        return slider
+    }()
+
+    private let reminderSwitch: UISwitch = {
+        let sw = UISwitch()
+        sw.isOn = true
+        return sw
+    }()
+
+    private let resetButton: UIButton = {
+        var config = UIButton.Configuration.tinted()
+        config.title = "Reset Defaults"
+        return UIButton(configuration: config)
+    }()
+
+    private let nextScreenButton: UIButton = {
+        var config = UIButton.Configuration.filled()
+        config.title = "Push Second Screen (Test Lifecycle)"
+        return UIButton(configuration: config)
+    }()
+
+    // Task 2: Live Summary Panel
+    private let summaryPanelLabel: UILabel = {
+        let label = UILabel()
+        label.numberOfLines = 0
+        label.font = .systemFont(ofSize: 15, weight: .medium)
+        label.textColor = .label
+        return label
+    }()
+
+    // Task 3: Lifecycle Log Console
+    private let logTextView: UITextView = {
+        let tv = UITextView()
+        tv.isEditable = false
+        tv.font = .monospacedSystemFont(ofSize: 12, weight: .regular)
+        tv.backgroundColor = .secondarySystemBackground
+        tv.layer.cornerRadius = 8
+        return tv
+    }()
+
+    private let scrollView: UIScrollView = {
+        let sv = UIScrollView()
+        sv.keyboardDismissMode = .interactive
+        sv.translatesAutoresizingMaskIntoConstraints = false
+        return sv
+    }()
+
+    // MARK: - Task 3: Lifecycle Callbacks
+    override func viewDidLoad() {
+        super.viewDidLoad()
+        title = "Controls & Lifecycle"
+        view.backgroundColor = .systemBackground
+
+        // One-time setup belongs in viewDidLoad
+        setupLayout()
+        wireControlActions()
+        updateSummaryPanel()
+
+        logLifecycle("ControlSummaryVC -> viewDidLoad")
+    }
+
+    override func viewWillAppear(_ animated: Bool) {
+        super.viewWillAppear(animated)
+        logLifecycle("ControlSummaryVC -> viewWillAppear")
+        // Lightweight state refresh before screen becomes visible
+        updateSummaryPanel()
+    }
+
+    override func viewDidAppear(_ animated: Bool) {
+        super.viewDidAppear(animated)
+        logLifecycle("ControlSummaryVC -> viewDidAppear")
+    }
+
+    override func viewWillDisappear(_ animated: Bool) {
+        super.viewWillDisappear(animated)
+        logLifecycle("ControlSummaryVC -> viewWillDisappear")
+    }
+
+    override func viewDidDisappear(_ animated: Bool) {
+        super.viewDidDisappear(animated)
+        logLifecycle("ControlSummaryVC -> viewDidDisappear")
+    }
+
+    // MARK: - Task 5: Keyboard-Safe Auto Layout Setup
+    private func setupLayout() {
+        let switchRow = UIStackView(arrangedSubviews: [makeLabel("Enable Reminder"), reminderSwitch])
+        switchRow.distribution = .equalSpacing
+
+        let summaryContainer = UIView()
+        summaryContainer.backgroundColor = .tertiarySystemFill
+        summaryContainer.layer.cornerRadius = 10
+        summaryPanelLabel.translatesAutoresizingMaskIntoConstraints = false
+        summaryContainer.addSubview(summaryPanelLabel)
+
+        NSLayoutConstraint.activate([
+            summaryPanelLabel.topAnchor.constraint(equalTo: summaryContainer.topAnchor, constant: 12),
+            summaryPanelLabel.leadingAnchor.constraint(equalTo: summaryContainer.leadingAnchor, constant: 12),
+            summaryPanelLabel.trailingAnchor.constraint(equalTo: summaryContainer.trailingAnchor, constant: -12),
+            summaryPanelLabel.bottomAnchor.constraint(equalTo: summaryContainer.bottomAnchor, constant: -12)
+        ])
+
+        let mainStack = UIStackView(arrangedSubviews: [
+            makeLabel("1. Session Title (UITextField)"),
+            nameTextField,
+            makeLabel("2. Priority Level (UISegmentedControl)"),
+            prioritySegment,
+            makeLabel("3. Study Duration Hours (UISlider)"),
+            hoursSlider,
+            switchRow,
+            resetButton,
+            makeLabel("Live Summary Panel"),
+            summaryContainer,
+            nextScreenButton,
+            makeLabel("Lifecycle Event Log"),
+            logTextView
+        ])
+        mainStack.axis = .vertical
+        mainStack.spacing = 10
+        mainStack.translatesAutoresizingMaskIntoConstraints = false
+
+        view.addSubview(scrollView)
+        scrollView.addSubview(mainStack)
+
+        NSLayoutConstraint.activate([
+            // Anchoring bottom to keyboardLayoutGuide keeps layout intact on keyboard presentation/dismissal
+            scrollView.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor),
+            scrollView.leadingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.leadingAnchor),
+            scrollView.trailingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.trailingAnchor),
+            scrollView.bottomAnchor.constraint(equalTo: view.keyboardLayoutGuide.topAnchor),
+
+            mainStack.topAnchor.constraint(equalTo: scrollView.contentLayoutGuide.topAnchor, constant: 16),
+            mainStack.leadingAnchor.constraint(equalTo: scrollView.frameLayoutGuide.leadingAnchor, constant: 16),
+            mainStack.trailingAnchor.constraint(equalTo: scrollView.frameLayoutGuide.trailingAnchor, constant: -16),
+            mainStack.bottomAnchor.constraint(equalTo: scrollView.contentLayoutGuide.bottomAnchor, constant: -16),
+
+            logTextView.heightAnchor.constraint(equalToConstant: 150)
+        ])
+    }
+
+    // MARK: - Task 1 & 2: Connect Controls to State Changes
+    private func wireControlActions() {
+        nameTextField.delegate = self
+        nameTextField.addTarget(self, action: #selector(controlDidChange), for: .editingChanged)
+        prioritySegment.addTarget(self, action: #selector(controlDidChange), for: .valueChanged)
+        hoursSlider.addTarget(self, action: #selector(controlDidChange), for: .valueChanged)
+        reminderSwitch.addTarget(self, action: #selector(controlDidChange), for: .valueChanged)
+        resetButton.addTarget(self, action: #selector(didTapReset), for: .touchUpInside)
+        nextScreenButton.addTarget(self, action: #selector(didTapPushNext), for: .touchUpInside)
+
+        let tap = UITapGestureRecognizer(target: self, action: #selector(dismissKeyboard))
+        tap.cancelsTouchesInView = false
+        view.addGestureRecognizer(tap)
+    }
+
+    @objc private func controlDidChange() {
+        updateSummaryPanel()
+    }
+
+    @objc private func didTapReset() {
+        nameTextField.text = ""
+        prioritySegment.selectedSegmentIndex = 1
+        hoursSlider.value = 3
+        reminderSwitch.isOn = true
+        updateSummaryPanel()
+    }
+
+    @objc private func didTapPushNext() {
+        let detailVC = SecondaryLifecycleViewController { [weak self] event in
+            self?.logLifecycle(event)
+        }
+        navigationController?.pushViewController(detailVC, animated: true)
+    }
+
+    @objc private func dismissKeyboard() {
+        view.endEditing(true)
+    }
+
+    func textFieldShouldReturn(_ textField: UITextField) -> Bool {
+        textField.resignFirstResponder()
+        return true
+    }
+
+    // Task 2: Updates summary panel whenever any control state changes
+    private func updateSummaryPanel() {
+        let titleText = (nameTextField.text?.trimmingCharacters(in: .whitespaces).isEmpty == false)
+            ? nameTextField.text!
+            : "Untitled Session"
+        let priority = prioritySegment.titleForSegment(at: prioritySegment.selectedSegmentIndex) ?? "Medium"
+        let hours = Int(hoursSlider.value.rounded())
+        let reminder = reminderSwitch.isOn ? "ON" : "OFF"
+
+        summaryPanelLabel.text = """
+        Title: \(titleText)
+        Priority: \(priority) | Duration: \(hours) hr(s)
+        Reminder Alert: \(reminder)
+        """
+    }
+
+    private func logLifecycle(_ message: String) {
+        let time = DateFormatter.localizedString(from: Date(), dateStyle: .none, timeStyle: .medium)
+        let entry = "[\(time)] \(message)"
+        print(entry)
+        logTextView.text += entry + "\n"
+    }
+
+    private func makeLabel(_ text: String) -> UILabel {
+        let label = UILabel()
+        label.text = text
+        label.font = .systemFont(ofSize: 13, weight: .semibold)
+        label.textColor = .secondaryLabel
+        return label
+    }
+}
+
+// ============================================================================
+// Screen 2: Secondary Screen to Observe Navigation Lifecycle Transitions
+// ============================================================================
+final class SecondaryLifecycleViewController: UIViewController {
+    private let onLog: (String) -> Void
+
+    init(onLog: @escaping (String) -> Void) {
+        self.onLog = onLog
+        super.init(nibName: nil, bundle: nil)
+    }
+
+    required init?(coder: NSCoder) {
+        return nil
+    }
+
+    override func viewDidLoad() {
+        super.viewDidLoad()
+        title = "Second Screen"
+        view.backgroundColor = .systemBackground
+        onLog("SecondaryVC -> viewDidLoad")
+
+        let infoLabel = UILabel()
+        infoLabel.text = "Tap 'Back' in the navigation bar to see viewWillAppear / viewDidAppear fire again on the first screen."
+        infoLabel.numberOfLines = 0
+        infoLabel.textAlignment = .center
+        infoLabel.translatesAutoresizingMaskIntoConstraints = false
+
+        view.addSubview(infoLabel)
+        NSLayoutConstraint.activate([
+            infoLabel.centerYAnchor.constraint(equalTo: view.centerYAnchor),
+            infoLabel.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 24),
+            infoLabel.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -24)
+        ])
+    }
+
+    override func viewWillAppear(_ animated: Bool) {
+        super.viewWillAppear(animated)
+        onLog("SecondaryVC -> viewWillAppear")
+    }
+
+    override func viewDidAppear(_ animated: Bool) {
+        super.viewDidAppear(animated)
+        onLog("SecondaryVC -> viewDidAppear")
+    }
+
+    override func viewWillDisappear(_ animated: Bool) {
+        super.viewWillDisappear(animated)
+        onLog("SecondaryVC -> viewWillDisappear")
+    }
+
+    override func viewDidDisappear(_ animated: Bool) {
+        super.viewDidDisappear(animated)
+        onLog("SecondaryVC -> viewDidDisappear")
+    }
+} 
