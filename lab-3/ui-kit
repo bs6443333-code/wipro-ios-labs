@@ -1,0 +1,78 @@
+import UIKit
+
+class GreetingViewController: UIViewController {
+
+    // 1. Title Label
+    private let titleLabel: UILabel = {
+        let label = UILabel()
+        label.text = "UIKit Greeting"
+        label.font = UIFont.systemFont(ofSize: 32, weight: .bold)
+        label.textAlignment = .center
+        label.translatesAutoresizingMaskIntoConstraints = false
+        return label
+    }()
+
+    // 2. Text Field
+    private let nameTextField: UITextField = {
+        let textField = UITextField()
+        textField.placeholder = "Enter your name"
+        textField.borderStyle = .roundedRect
+        textField.translatesAutoresizingMaskIntoConstraints = false
+        return textField
+    }()
+
+    // 3. Button
+    private let submitButton: UIButton = {
+        var config = UIButton.Configuration.filled()
+        config.title = "Submit"
+        let button = UIButton(configuration: config)
+        button.translatesAutoresizingMaskIntoConstraints = false
+        return button
+    }()
+
+    // 4. Result Label
+    private let resultLabel: UILabel = {
+        let label = UILabel()
+        label.text = "Result will appear here"
+        label.font = UIFont.systemFont(ofSize: 20, weight: .regular)
+        label.textColor = .secondaryLabel
+        label.textAlignment = .center
+        label.translatesAutoresizingMaskIntoConstraints = false
+        return label
+    }()
+
+    override func viewDidLoad() {
+        super.viewDidLoad()
+        view.backgroundColor = .systemBackground
+        setupLayout()
+        
+        // Connect button control to action
+        submitButton.addTarget(self, action: #selector(didTapSubmit), for: .touchUpInside)
+    }
+
+    private func setupLayout() {
+        let stackView = UIStackView(arrangedSubviews: [titleLabel, nameTextField, submitButton, resultLabel])
+        stackView.axis = .vertical
+        stackView.spacing = 20
+        stackView.alignment = .fill
+        stackView.translatesAutoresizingMaskIntoConstraints = false
+
+        view.addSubview(stackView)
+
+        NSLayoutConstraint.activate([
+            stackView.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 40),
+            stackView.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 20),
+            stackView.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -20)
+        ])
+    }
+
+    // Action handler that manually updates the UI
+    @objc private func didTapSubmit() {
+        let text = nameTextField.text?.trimmingCharacters(in: .whitespaces) ?? ""
+        if text.isEmpty {
+            resultLabel.text = "Please enter a name."
+        } else {
+            resultLabel.text = "Hello, \(text)!"
+        }
+    }
+}
