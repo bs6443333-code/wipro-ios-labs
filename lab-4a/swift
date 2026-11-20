@@ -1,0 +1,298 @@
+import SwiftUI
+import UIKit
+import Combine
+
+// ============================================================================
+// PART 1: MVC IMPLEMENTATION (UIKit)
+// ============================================================================
+
+// MARK: - MVC Model
+struct MVCTask {
+    let id = UUID()
+    var title: String
+    var isCompleted: Bool = false
+}
+
+enum MVCTaskFilter: Int {
+    case all = 0, pending, completed
+}
+
+// MARK: - MVC ViewController (Handles UI, State, Validation, and Filtering)
+class TaskMVCViewController: UIViewController, UITableViewDataSource, UITableViewDelegate {
+
+    private var tasks: [MVCTask] = []
+    private var currentFilter: MVCTaskFilter = .all
+
+    private let inputField: UITextField = {
+        let tf = UITextField()
+        tf.placeholder = "Enter new task..."
+        tf.borderStyle = .roundedRect
+        return tf
+    }()
+
+    private let addButton: UIButton = {
+        var config = UIButton.Configuration.filled()
+        config.title = "Add"
+        return UIButton(configuration: config)
+    }()
+
+    private let filterControl: UISegmentedControl = {
+        let sc = UISegmentedControl(items: ["All", "Pending", "Completed"])
+        sc.selectedSegmentIndex = 0
+        return sc
+    }()
+
+    private let tableView = UITableView()
+
+    override func viewDidLoad() {
+        super.viewDidLoad()
+        title = "Tasks (MVC)"
+        view.backgroundColor = .systemBackground
+        setupUI()
+
+        addButton.addTarget(self, action: #selector(didTapAdd), for: .touchUpInside)
+        filterControl.addTarget(self, action: #selector(didChangeFilter), for: .valueChanged)
+        tableView.dataSource = self
+        tableView.delegate = self
+    }
+
+    private func setupUI() {
+        let inputRow = UIStackView(arrangedSubviews: [inputField, addButton])
+        inputRow.spacing = 8
+
+        let mainStack = UIStackView(arrangedSubviews: [inputRow, filterControl, tableView])
+        mainStack.axis = .vertical
+        mainStack.spacing = 12
+        mainStack.translatesAutoresizingMaskIntoConstraints = false
+
+        view.addSubview(mainStack)
+        NSLayoutConstraint.activate([
+            mainStack.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 12),
+            mainStack.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 16),
+            mainStack.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -16),
+            mainStack.bottomAnchor.constraint(equalTo: view.bottomAnchor)
+        ])
+    }
+
+    @objc private func didTapAdd() {
+        let trimmed = inputField.text?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        guard !trimmed.isEmpty else { return }
+        tasks.append(MVCTask(title: trimmed))
+        inputField.text = ""
+        tableView.reloadData()
+    }
+
+    @objc private func didChangeFilter() {
+        currentFilter = MVCTaskFilter(rawValue: filterControl.selectedSegmentIndex) ?? .all
+        tableView.reloadData()
+    }
+
+    private var visibleTasks: [MVCTask] {
+        switch currentFilter {
+        case .all: return tasks
+        case .pending: return tasks.filter { !$0.isCompleted }
+        case .completed: return tasks.filter { $0.isCompleted }
+        }
+    }
+
+    func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int {
+        visibleTasks.count
+    }
+
+    func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexPath) -> UITableViewCell {
+        let cell = UITableViewCell(style: .default, reuseIdentifier: "cell")
+        let task = visibleTasks[indexPath.row]
+        cell.textLabel?.text = task.title
+        cell.accessoryType = task.isCompleted ? .checkmark : .none
+        return cell
+    }
+
+    func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
+        let selectedId = visibleTasks[indexPath.row].id
+        if let idx = tasks.firstIndex(where: { $0.id == selectedId }) {
+            tasks[idx].isCompleted.toggle()
+            tableView.reloadData()
+        }
+    }
+
+    func tableView(_ tableView: UITableView, commit editingStyle: UITableViewCell.EditingStyle, forRowAt indexPath: IndexPath) {
+        if editingStyle == .delete {
+            let selectedId = visibleTasks[indexPath.row].id
+            tasks.removeAll { $0.id == selectedId }
+            tableView.reloadData()
+        }
+    }
+}
+
+// UIKit Wrapper to preview MVC inside SwiftUI
+struct TaskMVCPreviewWrapper: UIViewControllerRepresentable {
+    func makeUIViewController(context: Context) -> UINavigationController {
+        UINavigationController(rootViewController: TaskMVCViewController())
+    }
+    func updateUIViewController(_ uiViewController: UINavigationController, context: Context) {}
+}
+
+// ============================================================================
+// PART 2: MVVM IMPLEMENTATION (SwiftUI)
+// ============================================================================
+
+// MARK: - MVVM Model
+struct Task: Identifiable, Equatable {
+    let id: UUID
+    var title: String
+    var isCompleted: Bool
+
+    init(id: UUID = UUID(), title: String, isCompleted: Bool = false) {
+        self.id = id
+        self.title = title
+        self.isCompleted = isCompleted
+    }
+}
+
+enum TaskFilter: String, CaseIterable, Identifiable {
+    case all = "All"
+    case pending = "Pending"
+    case completed = "Completed"
+    var id: String { rawValue }
+}
+
+// MARK: - MVVM ViewModel (Validation, Filtering & State Logic)
+final class TaskViewModel: ObservableObject {
+    @Published private(set) var tasks: [Task] = []
+    @Published var selectedFilter: TaskFilter = .all
+    @Published var newTaskTitle: String = ""
+    @Published var errorMessage: String?
+
+    var filteredTasks: [Task] {
+        switch selectedFilter {
+        case .all:
+            return tasks
+        case .pending:
+            return tasks.filter { !$0.isCompleted }
+        case .completed:
+            return tasks.filter { $0.isCompleted }
+        }
+    }
+
+    func addTask() {
+        let trimmed = newTaskTitle.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else {
+            errorMessage = "Task title cannot be empty."
+            return
+        }
+        errorMessage = nil
+        tasks.append(Task(title: trimmed))
+        newTaskTitle = ""
+    }
+
+    func toggleCompletion(for task: Task) {
+        guard let index = tasks.firstIndex(where: { $0.id == task.id }) else { return }
+        tasks[index].isCompleted.toggle()
+    }
+
+    func deleteTasks(at offsets: IndexSet) {
+        let idsToDelete = offsets.map { filteredTasks[$0].id }
+        tasks.removeAll { idsToDelete.contains($0.id) }
+    }
+}
+
+// MARK: - MVVM View (Declarative UI)
+struct TaskMVVMView: View {
+    @StateObject private var viewModel = TaskViewModel()
+
+    var body: some View {
+        NavigationStack {
+            VStack(spacing: 12) {
+                HStack {
+                    TextField("Enter new task...", text: $viewModel.newTaskTitle)
+                        .textFieldStyle(.roundedBorder)
+                    Button("Add") {
+                        viewModel.addTask()
+                    }
+                    .buttonStyle(.borderedProminent)
+                }
+                .padding(.horizontal)
+
+                if let error = viewModel.errorMessage {
+                    Text(error)
+                        .font(.caption)
+                        .foregroundColor(.red)
+                }
+
+                Picker("Filter", selection: $viewModel.selectedFilter) {
+                    ForEach(TaskFilter.allCases) { filter in
+                        Text(filter.rawValue).tag(filter)
+                    }
+                }
+                .pickerStyle(.segmented)
+                .padding(.horizontal)
+
+                List {
+                    ForEach(viewModel.filteredTasks) { task in
+                        HStack {
+                            Image(systemName: task.isCompleted ? "checkmark.circle.fill" : "circle")
+                                .foregroundColor(task.isCompleted ? .green : .gray)
+                            Text(task.title)
+                                .strikethrough(task.isCompleted)
+                        }
+                        .contentShape(Rectangle())
+                        .onTapGesture {
+                            viewModel.toggleCompletion(for: task)
+                        }
+                    }
+                    .onDelete(perform: viewModel.deleteTasks)
+                }
+            }
+            .navigationTitle("Tasks (MVVM)")
+        }
+    }
+}
+
+// ============================================================================
+// PART 3: COMBINED TAB VIEW (Switch Between MVC and MVVM Screens)
+// ============================================================================
+struct TaskArchitectureComparisonAppView: View {
+    var body: some View {
+        TabView {
+            TaskMVCPreviewWrapper()
+                .tabItem {
+                    Label("MVC (UIKit)", systemImage: "rectangle.stack")
+                }
+
+            TaskMVVMView()
+                .tabItem {
+                    Label("MVVM (SwiftUI)", systemImage: "square.stack.3d.up")
+                }
+        }
+    }
+}
+
+#Preview {
+    TaskArchitectureComparisonAppView()
+}
+
+// ============================================================================
+// PART 4: ARCHITECTURE DIAGRAM & COMPARISON NOTES
+// ============================================================================
+/*
+ ARCHITECTURE DIAGRAMS:
+
+ 1. MVC (UIKit):
+    View (UITableView/Controls) <---> TaskMVCViewController (State + Validation + Filtering) ---> Model (MVCTask)
+
+ 2. MVVM (SwiftUI):
+    View (TaskMVVMView) <---> TaskViewModel (@Published State + Validation + Filtering) ---> Model (Task)
+
+ COMPARISON (MVC vs. MVVM):
+ - Testability:
+   * MVC: Low — Validation and filtering are tightly coupled to UIViewController lifecycle.
+   * MVVM: High — TaskViewModel has zero UI imports and can be directly unit-tested with XCTest.
+
+ - Responsibility Boundaries:
+   * MVC: Blurred — ViewController acts as layout manager, delegate/dataSource, state store, and validator.
+   * MVVM: Strict — Model holds data, ViewModel handles business logic/state, View only renders UI.
+
+ - Wiring Required:
+   * MVC: Manual/Imperative — Requires addTarget selectors, delegates, and explicit tableView.reloadData().
+   * MVVM: Declarative/Reactive — Uses @StateObject, @Published, and $ two-way bindings for automatic UI updates.
+ */
