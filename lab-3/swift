@@ -1,0 +1,43 @@
+import SwiftUI
+
+struct GreetingSwiftUIView: View {
+    // State variables to hold input and output
+    @State private var nameInput: String = ""
+    @State private var resultText: String = "Result will appear here"
+
+    var body: some View {
+        VStack(spacing: 20) {
+            // 1. Title
+            Text("SwiftUI Greeting")
+                .font(.largeTitle)
+                .fontWeight(.bold)
+
+            // 2. Text Field
+            TextField("Enter your name", text: $nameInput)
+                .textFieldStyle(.roundedBorder)
+                .padding(.horizontal)
+
+            // 3. Button
+            Button("Submit") {
+                if nameInput.trimmingCharacters(in: .whitespaces).isEmpty {
+                    resultText = "Please enter a name."
+                } else {
+                    resultText = "Hello, \(nameInput)!"
+                }
+            }
+            .buttonStyle(.borderedProminent)
+
+            // 4. Result Label
+            Text(resultText)
+                .font(.title3)
+                .foregroundColor(.secondary)
+
+            Spacer()
+        }
+        .padding(.top, 40)
+    }
+}
+
+#Preview {
+    GreetingSwiftUIView()
+}
