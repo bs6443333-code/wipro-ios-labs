@@ -1,0 +1,182 @@
+import UIKit
+
+// ============================================================================
+// Task 2: Codable Model
+// ============================================================================
+struct UserPost: Codable, Sendable {
+    let userId: Int
+    let id: Int
+    let title: String
+    let body: String
+}
+
+// ============================================================================
+// Task 1: UIKit Form with Validation and Auto Layout
+// ============================================================================
+final class SearchFormViewController: UIViewController {
+
+    private let userIdField: UITextField = {
+        let tf = UITextField()
+        tf.placeholder = "Enter User ID (1–10) or leave blank for all"
+        tf.borderStyle = .roundedRect
+        tf.keyboardType = .numberPad
+        tf.translatesAutoresizingMaskIntoConstraints = false
+        return tf
+    }()
+
+    private let errorLabel: UILabel = {
+        let label = UILabel()
+        label.textColor = .systemRed
+        label.font = .systemFont(ofSize: 13)
+        label.numberOfLines = 0
+        label.isHidden = true
+        label.translatesAutoresizingMaskIntoConstraints = false
+        return label
+    }()
+
+    private let fetchButton: UIButton = {
+        var config = UIButton.Configuration.filled()
+        config.title = "Fetch Posts"
+        let button = UIButton(configuration: config)
+        button.translatesAutoresizingMaskIntoConstraints = false
+        return button
+    }()
+
+    override func viewDidLoad() {
+        super.viewDidLoad()
+        title = "Post Search"
+        view.backgroundColor = .systemBackground
+        setupConstraints()
+        fetchButton.addTarget(self, action: #selector(didTapFetch), for: .touchUpInside)
+    }
+
+    private func setupConstraints() {
+        let stack = UIStackView(arrangedSubviews: [userIdField, errorLabel, fetchButton])
+        stack.axis = .vertical
+        stack.spacing = 12
+        stack.translatesAutoresizingMaskIntoConstraints = false
+
+        view.addSubview(stack)
+        NSLayoutConstraint.activate([
+            stack.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 24),
+            stack.leadingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.leadingAnchor, constant: 20),
+            stack.trailingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.trailingAnchor, constant: -20),
+            fetchButton.heightAnchor.constraint(equalToConstant: 46)
+        ])
+    }
+
+    @objc private func didTapFetch() {
+        view.endEditing(true)
+        let rawInput = userIdField.text?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+
+        // Validation: empty allows all posts; non-empty must be integer 1...10
+        var validatedUserId: Int? = nil
+        if !rawInput.isEmpty {
+            guard let parsed = Int(rawInput), (1...10).contains(parsed) else {
+                errorLabel.text = "Please enter a valid User ID between 1 and 10."
+                errorLabel.isHidden = false
+                return
+            }
+            validatedUserId = parsed
+        }
+
+        errorLabel.isHidden = true
+        let listVC = PostResultsListViewController(filterUserId: validatedUserId)
+        navigationController?.pushViewController(listVC, animated: true)
+    }
+}
+
+// ============================================================================
+// Tasks 2, 3 & 4: List Screen with Loading, Empty, Failure States & Navigation
+// ============================================================================
+final class PostResultsListViewController: UIViewController, UITableViewDataSource, UITableViewDelegate {
+
+    private let filterUserId: Int?
+    private var posts: [UserPost] = []
+
+    private let tableView: UITableView = {
+        let tv = UITableView(frame: .zero, style: .plain)
+        tv.translatesAutoresizingMaskIntoConstraints = false
+        return tv
+    }()
+
+    private let spinner: UIActivityIndicatorView = {
+        let indicator = UIActivityIndicatorView(style: .large)
+        indicator.hidesWhenStopped = true
+        indicator.translatesAutoresizingMaskIntoConstraints = false
+        return indicator
+    }()
+
+    private let stateLabel: UILabel = {
+        let label = UILabel()
+        label.textAlignment = .center
+        label.numberOfLines = 0
+        label.textColor = .secondaryLabel
+        label.isHidden = true
+        label.translatesAutoresizingMaskIntoConstraints = false
+        return label
+    }()
+
+    private let retryButton: UIButton = {
+        var config = UIButton.Configuration.borderedProminent()
+        config.title = "Retry"
+        let button = UIButton(configuration: config)
+        button.isHidden = true
+        button.translatesAutoresizingMaskIntoConstraints = false
+        return button
+    }()
+
+    init(filterUserId: Int?) {
+        self.filterUserId = filterUserId
+        super.init(nibName: nil, bundle: nil)
+    }
+
+    required init?(coder: NSCoder) {
+        return nil
+    }
+
+    override func viewDidLoad() {
+        super.viewDidLoad()
+        title = filterUserId.map { "User \($0) Posts" } ?? "All Posts"
+        view.backgroundColor = .systemBackground
+        setupViews()
+        loadData()
+    }
+
+    private func setupViews() {
+        tableView.dataSource = self
+        tableView.delegate = self
+
+        let stateStack = UIStackView(arrangedSubviews: [spinner, stateLabel, retryButton])
+        stateStack.axis = .vertical
+        stateStack.alignment = .center
+        stateStack.spacing = 12
+        stateStack.translatesAutoresizingMaskIntoConstraints = false
+
+        view.addSubview(tableView)
+        view.addSubview(stateStack)
+
+        NSLayoutConstraint.activate([
+            tableView.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor),
+            tableView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            tableView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+            tableView.bottomAnchor.constraint(equalTo: view.bottomAnchor),
+
+            stateStack.centerYAnchor.constraint(equalTo: view.centerYAnchor),
+            stateStack.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 24),
+            stateStack.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -24)
+        ])
+
+        retryButton.addTarget(self, action: #selector(loadData), for: .touchUpInside)
+    }
+
+    // Task 2 & 3: Fetch JSON with URLSession, decode with JSONDecoder, update UI states
+    @objc private func loadData() {
+        setLoadingState()
+
+        var components = URLComponents(string: "https://jsonplaceholder.typicode.com/posts")
+        if let userId = filterUserId {
+            components?.queryItems = [URLQueryItem(name: "userId", value: String(userId))]
+        }
+
+        guard let url = components
