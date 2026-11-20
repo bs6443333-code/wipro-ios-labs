@@ -1,0 +1,180 @@
+import UIKit
+
+// MARK: - Validation Logic (Extracted for Unit Testing)
+struct ProfileFormValidator {
+    struct ValidationResult: Equatable {
+        let nameError: String?
+        let emailError: String?
+        let courseError: String?
+
+        var isValid: Bool {
+            nameError == nil && emailError == nil && courseError == nil
+        }
+    }
+
+    static func validate(name: String?, email: String?, course: String?) -> ValidationResult {
+        let trimmedName = name?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let trimmedEmail = email?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let trimmedCourse = course?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+
+        let nameError: String? = trimmedName.isEmpty ? "Full name is required." : nil
+
+        let emailError: String?
+        if trimmedEmail.isEmpty {
+            emailError = "Email address is required."
+        } else if !isValidEmail(trimmedEmail) {
+            emailError = "Enter a valid email address (e.g., name@domain.com)."
+        } else {
+            emailError = nil
+        }
+
+        let courseError: String? = trimmedCourse.isEmpty ? "Course name is required." : nil
+
+        return ValidationResult(nameError: nameError, emailError: emailError, courseError: courseError)
+    }
+
+    private static func isValidEmail(_ email: String) -> Bool {
+        let pattern = #"^[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}$"#
+        return email.range(of: pattern, options: [.regularExpression, .caseInsensitive]) != nil
+    }
+}
+
+// MARK: - UIKit Profile Form ViewController (Tasks 1, 2, 3 & 4)
+class ProfileFormViewController: UIViewController, UITextFieldDelegate {
+
+    // ScrollView ensures responsiveness across small and large simulator screens
+    private let scrollView: UIScrollView = {
+        let sv = UIScrollView()
+        sv.keyboardDismissMode = .interactive
+        sv.translatesAutoresizingMaskIntoConstraints = false
+        return sv
+    }()
+
+    private let contentStack: UIStackView = {
+        let stack = UIStackView()
+        stack.axis = .vertical
+        stack.spacing = 14
+        stack.translatesAutoresizingMaskIntoConstraints = false
+        return stack
+    }()
+
+    // Name Controls
+    private let nameField: UITextField = {
+        let tf = UITextField()
+        tf.placeholder = "Full Name"
+        tf.borderStyle = .roundedRect
+        tf.keyboardType = .namePhonePad
+        tf.textContentType = .name
+        tf.autocapitalizationType = .words
+        tf.returnKeyType = .next
+        tf.accessibilityLabel = "Full Name"
+        tf.accessibilityHint = "Enter your full legal name"
+        return tf
+    }()
+
+    private let nameErrorLabel = ProfileFormViewController.makeErrorLabel(accessibilityID: "nameErrorLabel")
+
+    // Email Controls
+    private let emailField: UITextField = {
+        let tf = UITextField()
+        tf.placeholder = "Email Address"
+        tf.borderStyle = .roundedRect
+        tf.keyboardType = .emailAddress
+        tf.textContentType = .emailAddress
+        tf.autocapitalizationType = .none
+        tf.autocorrectionType = .no
+        tf.returnKeyType = .next
+        tf.accessibilityLabel = "Email Address"
+        tf.accessibilityHint = "Enter a valid email address"
+        return tf
+    }()
+
+    private let emailErrorLabel = ProfileFormViewController.makeErrorLabel(accessibilityID: "emailErrorLabel")
+
+    // Course Controls
+    private let courseField: UITextField = {
+        let tf = UITextField()
+        tf.placeholder = "Course (e.g., B.Tech Computer Science)"
+        tf.borderStyle = .roundedRect
+        tf.keyboardType = .default
+        tf.autocapitalizationType = .words
+        tf.returnKeyType = .done
+        tf.accessibilityLabel = "Course Name"
+        tf.accessibilityHint = "Enter your enrolled course"
+        return tf
+    }()
+
+    private let courseErrorLabel = ProfileFormViewController.makeErrorLabel(accessibilityID: "courseErrorLabel")
+
+    // Submit Button
+    private let submitButton: UIButton = {
+        var config = UIButton.Configuration.filled()
+        config.title = "Submit Profile"
+        config.cornerStyle = .medium
+        let button = UIButton(configuration: config)
+        button.accessibilityLabel = "Submit Profile"
+        button.accessibilityHint = "Validates fields and submits your profile"
+        return button
+    }()
+
+    override func viewDidLoad() {
+        super.viewDidLoad()
+        title = "Student Profile"
+        view.backgroundColor = .systemBackground
+        setupHierarchyAndConstraints()
+        configureInteractions()
+    }
+
+    // Task 2: Pure Auto Layout constraints (zero hardcoded screen coordinates)
+    private func setupHierarchyAndConstraints() {
+        view.addSubview(scrollView)
+        scrollView.addSubview(contentStack)
+
+        let fieldsAndErrors: [UIView] = [
+            makeSectionHeader("Personal Details"),
+            nameField, nameErrorLabel,
+            emailField, emailErrorLabel,
+            courseField, courseErrorLabel,
+            submitButton
+        ]
+        fieldsAndErrors.forEach { contentStack.addArrangedSubview($0) }
+        contentStack.setCustomSpacing(24, after: courseErrorLabel)
+
+        NSLayoutConstraint.activate([
+            scrollView.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor),
+            scrollView.leadingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.leadingAnchor),
+            scrollView.trailingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.trailingAnchor),
+            scrollView.bottomAnchor.constraint(equalTo: view.keyboardLayoutGuide.topAnchor),
+
+            contentStack.topAnchor.constraint(equalTo: scrollView.contentLayoutGuide.topAnchor, constant: 20),
+            contentStack.leadingAnchor.constraint(equalTo: scrollView.frameLayoutGuide.leadingAnchor, constant: 20),
+            contentStack.trailingAnchor.constraint(equalTo: scrollView.frameLayoutGuide.trailingAnchor, constant: -20),
+            contentStack.bottomAnchor.constraint(equalTo: scrollView.contentLayoutGuide.bottomAnchor, constant: -20),
+
+            submitButton.heightAnchor.constraint(equalToConstant: 48)
+        ])
+    }
+
+    // Task 4: Keyboard dismissal (tap outside + Return key progression)
+    private func configureInteractions() {
+        nameField.delegate = self
+        emailField.delegate = self
+        courseField.delegate = self
+
+        submitButton.addTarget(self, action: #selector(didTapSubmit), for: .touchUpInside)
+
+        let tapGesture = UITapGestureRecognizer(target: self, action: #selector(dismissKeyboard))
+        tapGesture.cancelsTouchesInView = false
+        view.addGestureRecognizer(tapGesture)
+    }
+
+    @objc private func dismissKeyboard() {
+        view.endEditing(true)
+    }
+
+    func textFieldShouldReturn(_ textField: UITextField) -> Bool {
+        switch textField {
+        case nameField:
+            emailField.becomeFirstResponder()
+        case emailField:
+            courseField.becomeFirstResponder
