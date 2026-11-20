@@ -1,0 +1,213 @@
+import Foundation
+
+// ============================================================================
+// R1: Gradebook Using Arrays/Dictionaries and Safe Optionals
+// ============================================================================
+struct Gradebook {
+    private var records: [String: [Int]] = [:]
+
+    mutating func addStudent(_ name: String, scores: [Int]) {
+        records[name] = scores
+    }
+
+    func averageScore(for student: String) -> Double? {
+        guard let scores = records[student], !scores.isEmpty else {
+            return nil
+        }
+        let total = scores.reduce(0, +)
+        return Double(total) / Double(scores.count)
+    }
+
+    func printReport(for student: String) {
+        if let avg = averageScore(for: student) {
+            print("\(student)'s Average: \(String(format: "%.2f", avg))")
+        } else {
+            print("No valid grade records found for \(student).")
+        }
+    }
+}
+
+func runR1() {
+    print("--- R1: Gradebook ---")
+    var gradebook = Gradebook()
+    gradebook.addStudent("Bharat", scores: [88, 92, 95])
+    gradebook.addStudent("Aarav", scores: [])
+
+    gradebook.printReport(for: "Bharat")
+    gradebook.printReport(for: "Aarav")
+    gradebook.printReport(for: "Riya")
+    print()
+}
+
+// ============================================================================
+// R2: Generic Stack<T> Demonstrated with Two Element Types
+// ============================================================================
+struct Stack<T> {
+    private var items: [T] = []
+
+    var isEmpty: Bool {
+        return items.isEmpty
+    }
+
+    mutating func push(_ element: T) {
+        items.append(element)
+    }
+
+    @discardableResult
+    mutating func pop() -> T? {
+        return items.popLast()
+    }
+
+    func peek() -> T? {
+        return items.last
+    }
+}
+
+func runR2() {
+    print("--- R2: Generic Stack<T> ---")
+    var intStack = Stack<Int>()
+    intStack.push(10)
+    intStack.push(20)
+    print("Int Stack Peek:", intStack.peek() ?? -1)
+    print("Int Stack Pop:", intStack.pop() ?? -1)
+
+    var stringStack = Stack<String>()
+    stringStack.push("Swift")
+    stringStack.push("UIKit")
+    print("String Stack Peek:", stringStack.peek() ?? "Empty")
+    print("String Stack Pop:", stringStack.pop() ?? "Empty")
+    print()
+}
+
+// ============================================================================
+// R3: Fix a Retain Cycle and Explain the Fix
+// ============================================================================
+class Course {
+    let title: String
+    // FIX: Declared as 'weak' so Course does not hold a strong reference back to Student
+    weak var enrolledStudent: Student?
+
+    init(title: String) {
+        self.title = title
+    }
+
+    deinit {
+        print("Course '\(title)' deallocated.")
+    }
+}
+
+class Student {
+    let name: String
+    var activeCourse: Course?
+
+    init(name: String) {
+        self.name = name
+    }
+
+    deinit {
+        print("Student '\(name)' deallocated.")
+    }
+}
+
+func runR3() {
+    print("--- R3: Retain Cycle Fix ---")
+    var student: Student? = Student(name: "Bharat")
+    var course: Course? = Course(title: "iOS Development")
+
+    student?.activeCourse = course
+    course?.enrolledStudent = student
+
+    // Breaking external references triggers deinit for both objects
+    student = nil
+    course = nil
+    print()
+}
+
+/*
+ R3 EXPLANATION:
+ In Swift, Automatic Reference Counting (ARC) deallocates an instance only when its
+ strong reference count drops to zero. Previously, Student held a strong reference to
+ Course, and Course held a strong reference back to Student, creating a strong reference
+ cycle (retain cycle) that leaked memory even after setting both variables to nil.
+ Marking 'enrolledStudent' as 'weak' breaks the cycle because a weak reference does not
+ increment the retain count and automatically becomes nil when the Student instance is deallocated.
+ */
+
+// ============================================================================
+// R4: Throwing Validation Function Handling Two Distinct Errors
+// ============================================================================
+enum RegistrationError: Error {
+    case emptyUsername
+    case weakPassword(minLength: Int)
+}
+
+func validateRegistration(username: String, password: String) throws -> String {
+    guard !username.trimmingCharacters(in: .whitespaces).isEmpty else {
+        throw RegistrationError.emptyUsername
+    }
+    guard password.count >= 8 else {
+        throw RegistrationError.weakPassword(minLength: 8)
+    }
+    return "User '\(username)' registered successfully!"
+}
+
+func runR4() {
+    print("--- R4: Throwing Validation Function ---")
+    let testInputs = [
+        ("", "password123"),
+        ("bharat_dev", "1234"),
+        ("bharat_dev", "Swift@2026")
+    ]
+
+    for (user, pass) in testInputs {
+        do {
+            let message = try validateRegistration(username: user, password: pass)
+            print(message)
+        } catch RegistrationError.emptyUsername {
+            print("Validation Failed: Username cannot be empty.")
+        } catch RegistrationError.weakPassword(let minLength) {
+            print("Validation Failed: Password must be at least \(minLength) characters long.")
+        } catch {
+            print("Unexpected error: \(error)")
+        }
+    }
+    print()
+}
+
+// ============================================================================
+// R5: Viva Notes (struct vs class, protocol vs inheritance, map/filter/reduce)
+// ============================================================================
+/*
+ 1. struct vs. class:
+    - Value vs. Reference: Structs are value types (copied on assignment/passing);
+      classes are reference types (shared pointer to the same memory instance).
+    - Memory & ARC: Structs live on the stack without ARC overhead; classes live on
+      the heap and use ARC (susceptible to retain cycles).
+    - Inheritance & Mutability: Classes support single inheritance; structs do not
+      (they use protocols) and need the 'mutating' keyword to modify properties.
+
+ 2. protocol vs. Inheritance:
+    - Composition vs. Hierarchy: Inheritance is a rigid single-parent "is-a" hierarchy
+      for classes only. Protocols define a "can-do" blueprint usable by classes, structs,
+      and enums.
+    - Multiple Conformance: A class inherits from at most one superclass, whereas any
+      type can conform to multiple protocols simultaneously.
+    - Default Implementations: Protocol extensions provide shared behavior without tight
+      parent-child coupling.
+
+ 3. map, filter, and reduce:
+    - map: Transforms each element in a collection and returns a new array
+      (e.g., [1, 2, 3].map { $0 * 2 } -> [2, 4, 6]).
+    - filter: Returns a new array containing only elements matching a boolean predicate
+      (e.g., [1, 2, 3, 4].filter { $0 % 2 == 0 } -> [2, 4]).
+    - reduce: Combines all elements into a single accumulated value from an initial seed
+      (e.g., [1, 2, 3, 4].reduce(0, +) -> 10).
+ */
+
+// ============================================================================
+// Execute All Tasks
+// ============================================================================
+runR1()
+runR2()
+runR3()
+runR4()
