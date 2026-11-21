@@ -1,0 +1,275 @@
+import SwiftUI
+import Photos
+import PhotosUI
+
+// MARK: - 1. App Entry Point
+@main
+struct ProjectAuditApp: App {
+    var body: some Scene {
+        WindowGroup {
+            ProjectAuditView()
+        }
+    }
+}
+
+// MARK: - 2. Bundle Metadata Helper (No Sensitive Permissions Required - Tasks 1 & 3)
+struct AppMetadata {
+    static var appName: String {
+        Bundle.main.object(forInfoDictionaryKey: "CFBundleDisplayName") as? String
+        ?? Bundle.main.object(forInfoDictionaryKey: "CFBundleName") as? String
+        ?? "Lab-9 Audit App"
+    }
+    
+    static var bundleIdentifier: String {
+        Bundle.main.bundleIdentifier ?? "com.student.lab9.audit"
+    }
+    
+    static var version: String {
+        Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "1.0"
+    }
+    
+    static var buildNumber: String {
+        Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "1"
+    }
+    
+    static var minimumOSVersion: String {
+        Bundle.main.object(forInfoDictionaryKey: "MinimumOSVersion") as? String ?? "iOS 17.0+"
+    }
+    
+    static var supportedOrientations: [String] {
+        (Bundle.main.object(forInfoDictionaryKey: "UISupportedInterfaceOrientations") as? [String] ?? [])
+            .map { raw in
+                raw.replacingOccurrences(of: "UIInterfaceOrientation", with: "")
+            }
+    }
+}
+
+// MARK: - 3. Main Configuration & Permission Audit View (Tasks 1, 2, 3, 4)
+struct ProjectAuditView: View {
+    // No-permission feature state: Exportable Audit Notes
+    @State private var auditorNote: String = "Verified Bundle ID, Version, Signing Team, and Orientation locks."
+    
+    // Optional Photo Library permission state (Tasks 3 & 4)
+    @State private var photoAuthStatus: PHAuthorizationStatus = PHPhotoLibrary.authorizationStatus(for: .readWrite)
+    @State private var selectedPhotoItem: PhotosPickerItem?
+    @State private var loadedProfileImage: Image?
+    @State private var isShowingPermissionAlert: Bool = false
+    
+    var body: some View {
+        NavigationStack {
+            List {
+                // SECTION 1: Target & Bundle Metadata (Task 1 - No Sensitive Permission)
+                Section {
+                    MetadataRow(label: "App Name", value: AppMetadata.appName)
+                    MetadataRow(label: "Bundle Identifier", value: AppMetadata.bundleIdentifier)
+                    MetadataRow(label: "Version (Marketing)", value: AppMetadata.version)
+                    MetadataRow(label: "Build Number", value: AppMetadata.buildNumber)
+                    MetadataRow(label: "Deployment Target", value: AppMetadata.minimumOSVersion)
+                    
+                    if !AppMetadata.supportedOrientations.isEmpty {
+                        MetadataRow(
+                            label: "Orientations",
+                            value: AppMetadata.supportedOrientations.joined(separator: ", ")
+                        )
+                    }
+                } header: {
+                    Text("Target & Info.plist Metadata")
+                } footer: {
+                    Text("Read directly from Bundle.main. Requires zero sensitive device permissions.")
+                }
+                
+                // SECTION 2: Zero-Permission Feature (Task 3 - ShareLink)
+                Section {
+                    TextField("Enter audit summary note...", text: $auditorNote, axis: .vertical)
+                        .lineLimit(2...4)
+                    
+                    ShareLink(item: generateAuditReport()) {
+                        Label("Export Audit Report", systemImage: "square.and.arrow.up")
+                            .fontWeight(.medium)
+                    }
+                } header: {
+                    Text("Zero-Permission Feature")
+                } footer: {
+                    Text("ShareLink uses the system share sheet out-of-process without requesting file or contact permissions.")
+                }
+                
+                // SECTION 3: Optional Permission Feature with Graceful Fallback (Tasks 2, 3, 4)
+                Section {
+                    HStack {
+                        Text("Photo Library Status")
+                        Spacer()
+                        PermissionStatusBadge(status: photoAuthStatus)
+                    }
+                    
+                    // Privacy-preserving PHPicker (works even without full library authorization)
+                    PhotosPicker(selection: $selectedPhotoItem, matching: .images) {
+                        Label("Select Avatar via System Picker", systemImage: "photo.on.rectangle")
+                    }
+                    .onChange(of: selectedPhotoItem) { _, newItem in
+                        Task {
+                            if let data = try? await newItem?.loadTransferable(type: Data.self),
+                               let uiImage = UIImage(data: data) {
+                                loadedProfileImage = Image(uiImage: uiImage)
+                            }
+                        }
+                    }
+                    
+                    // Explicit authorization check & graceful denied handling (Task 4)
+                    Button {
+                        requestPhotoLibraryAccess()
+                    } label: {
+                        Label("Verify Explicit Photo Library Access", systemImage: "checkmark.shield")
+                    }
+                    
+                    if photoAuthStatus == .denied || photoAuthStatus == .restricted {
+                        DeniedPermissionBanner()
+                    }
+                    
+                    if let loadedProfileImage {
+                        HStack {
+                            Spacer()
+                            loadedProfileImage
+                                .resizable()
+                                .scaledToFill()
+                                .frame(width: 100, height: 100)
+                                .clipShape(RoundedRectangle(cornerRadius: 14))
+                            Spacer()
+                        }
+                        .padding(.vertical, 6)
+                    }
+                } header: {
+                    Text("Optional Permission Audit (Photo Library)")
+                } footer: {
+                    Text("Requires NSPhotoLibraryUsageDescription in Target > Info with a clear user-facing purpose string.")
+                }
+            }
+            .navigationTitle("Project Audit")
+            .onAppear {
+                photoAuthStatus = PHPhotoLibrary.authorizationStatus(for: .readWrite)
+            }
+            .alert("Photo Access Denied", isPresented: $isShowingPermissionAlert) {
+                Button("Open Settings") {
+                    openAppSettings()
+                }
+                Button("Continue Without Access", role: .cancel) { }
+            } message: {
+                Text("Photo Library access was denied. You can still use the privacy-safe system picker above or enable access in Settings.")
+            }
+        }
+    }
+    
+    // MARK: Helper Methods
+    private func requestPhotoLibraryAccess() {
+        let current = PHPhotoLibrary.authorizationStatus(for: .readWrite)
+        switch current {
+        case .notDetermined:
+            PHPhotoLibrary.requestAuthorization(for: .readWrite) { newStatus in
+                DispatchQueue.main.async {
+                    self.photoAuthStatus = newStatus
+                    if newStatus == .denied || newStatus == .restricted {
+                        self.isShowingPermissionAlert = true
+                    }
+                }
+            }
+        case .denied, .restricted:
+            photoAuthStatus = current
+            isShowingPermissionAlert = true
+        case .authorized, .limited:
+            photoAuthStatus = current
+        @unknown default:
+            break
+        }
+    }
+    
+    private func openAppSettings() {
+        guard let settingsURL = URL(string: UIApplication.openSettingsURLString),
+              UIApplication.shared.canOpenURL(settingsURL) else { return }
+        UIApplication.shared.open(settingsURL)
+    }
+    
+    private func generateAuditReport() -> String {
+        """
+        Project Configuration Audit Report
+        ----------------------------------
+        App Name: \(AppMetadata.appName)
+        Bundle ID: \(AppMetadata.bundleIdentifier)
+        Version: \(AppMetadata.version) (Build \(AppMetadata.buildNumber))
+        Min Deployment: \(AppMetadata.minimumOSVersion)
+        Auditor Note: \(auditorNote)
+        """
+    }
+}
+
+// MARK: - 4. Reusable Subviews
+struct MetadataRow: View {
+    let label: String
+    let value: String
+    
+    var body: some View {
+        HStack(alignment: .top) {
+            Text(label)
+                .foregroundColor(.primary)
+            Spacer()
+            Text(value)
+                .foregroundColor(.secondary)
+                .multilineTextAlignment(.trailing)
+                .font(.subheadline)
+        }
+    }
+}
+
+struct PermissionStatusBadge: View {
+    let status: PHAuthorizationStatus
+    
+    private var labelAndColor: (String, Color) {
+        switch status {
+        case .authorized: return ("Authorized", .green)
+        case .limited: return ("Limited", .blue)
+        case .denied: return ("Denied", .red)
+        case .restricted: return ("Restricted", .orange)
+        case .notDetermined: return ("Not Requested", .secondary)
+        @unknown default: return ("Unknown", .secondary)
+        }
+    }
+    
+    var body: some View {
+        Text(labelAndColor.0)
+            .font(.caption)
+            .fontWeight(.semibold)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 4)
+            .background(labelAndColor.1.opacity(0.15))
+            .foregroundColor(labelAndColor.1)
+            .clipShape(Capsule())
+    }
+}
+
+struct DeniedPermissionBanner: View {
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Label("Photo Library Access Restricted", systemImage: "exclamationmark.triangle.fill")
+                .font(.subheadline)
+                .fontWeight(.semibold)
+                .foregroundColor(.orange)
+            
+            Text("The app remains fully functional. Enable access in iOS Settings if you want full library browsing.")
+                .font(.caption)
+                .foregroundColor(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+            
+            Button("Open iOS Settings") {
+                if let url = URL(string: UIApplication.openSettingsURLString) {
+                    UIApplication.shared.open(url)
+                }
+            }
+            .font(.caption)
+            .buttonStyle(.bordered)
+        }
+        .padding(.vertical, 4)
+    }
+}
+
+// MARK: - 5. Preview
+#Preview {
+    ProjectAuditView()
+}
