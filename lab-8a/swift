@@ -1,0 +1,167 @@
+import SwiftUI
+
+// MARK: - 1. App Entry Point
+@main
+struct CourseExplorerApp: App {
+    var body: some Scene {
+        WindowGroup {
+            CourseExplorerView()
+        }
+    }
+}
+
+// MARK: - 2. Data Model
+struct Course: Identifiable, Hashable {
+    let id = UUID()
+    let title: String
+    let category: String
+    let instructor: String
+    let duration: String
+    let description: String
+    let modules: [String]
+    let themeColor: Color
+    let iconName: String
+}
+
+extension Course {
+    static let sampleCourses: [Course] = [
+        Course(
+            title: "SwiftUI Fundamentals",
+            category: "iOS Development",
+            instructor: "Jane Doe",
+            duration: "4h 30m",
+            description: "Learn the building blocks of declarative UI development in Swift, including stacks, state management, and navigation.",
+            modules: ["Views & Modifiers", "Stacks & Layout", "State & Binding", "NavigationStack"],
+            themeColor: .blue,
+            iconName: "swift"
+        ),
+        Course(
+            title: "UI/UX Design Systems",
+            category: "Design",
+            instructor: "Alex Rivera",
+            duration: "3h 15m",
+            description: "Master typography, color theory, spacing, and component libraries to build cohesive mobile interfaces.",
+            modules: ["Color & Contrast", "Typography Hierarchy", "Grid Systems", "Prototyping"],
+            themeColor: .purple,
+            iconName: "paintpalette.fill"
+        ),
+        Course(
+            title: "Data Structures in Swift",
+            category: "Computer Science",
+            instructor: "Dr. Sam Lee",
+            duration: "6h 00m",
+            description: "Deep dive into arrays, dictionaries, trees, and algorithm efficiency tailored for Swift developers.",
+            modules: ["Big O Notation", "Arrays & Sets", "Linked Lists", "Trees & Graphs"],
+            themeColor: .orange,
+            iconName: "cpu"
+        )
+    ]
+}
+
+// MARK: - 3. Main Explorer View
+struct CourseExplorerView: View {
+    @State private var courses: [Course] = Course.sampleCourses
+    @State private var selectedCategory: String = "All"
+    
+    private var categories: [String] {
+        ["All"] + Array(Set(courses.map { $0.category })).sorted()
+    }
+    
+    private var filteredCourses: [Course] {
+        if selectedCategory == "All" {
+            return courses
+        }
+        return courses.filter { $0.category == selectedCategory }
+    }
+    
+    var body: some View {
+        NavigationStack {
+            Group {
+                if courses.isEmpty {
+                    EmptyCoursesView {
+                        courses = Course.sampleCourses
+                    }
+                } else {
+                    courseListScrollView
+                }
+            }
+            .navigationTitle("Course Explorer")
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button(courses.isEmpty ? "Reset" : "Clear All") {
+                        withAnimation {
+                            courses = courses.isEmpty ? Course.sampleCourses : []
+                        }
+                    }
+                }
+            }
+        }
+    }
+    
+    private var courseListScrollView: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 16) {
+                // Horizontal Category Filter
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 8) {
+                        ForEach(categories, id: \.self) { category in
+                            Button {
+                                selectedCategory = category
+                            } label: {
+                                Text(category)
+                                    .font(.subheadline)
+                                    .fontWeight(.medium)
+                                    .padding(.horizontal, 14)
+                                    .padding(.vertical, 8)
+                                    .background(selectedCategory == category ? Color.accentColor : Color(.secondarySystemBackground))
+                                    .foregroundColor(selectedCategory == category ? .white : .primary)
+                                    .clipShape(Capsule())
+                            }
+                        }
+                    }
+                    .padding(.horizontal)
+                }
+                
+                // Vertical Stack of Course Cards
+                LazyVStack(spacing: 16) {
+                    ForEach(filteredCourses) { course in
+                        NavigationLink(value: course) {
+                            CourseCardView(course: course)
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+                .padding(.horizontal)
+            }
+            .padding(.vertical)
+        }
+        .navigationDestination(for: Course.self) { course in
+            CourseDetailView(course: course)
+        }
+    }
+}
+
+// MARK: - 4. Detail Screen
+struct CourseDetailView: View {
+    let course: Course
+    
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            headerSection
+            
+            List {
+                Section("About this Course") {
+                    Text(course.description)
+                        .font(.body)
+                        .foregroundColor(.secondary)
+                        .padding(.vertical, 4)
+                }
+                
+                Section("Course Modules") {
+                    ForEach(Array(course.modules.enumerated()), id: \.offset) { index, module in
+                        HStack(spacing: 12) {
+                            Text("\(index + 1)")
+                                .font(.caption)
+                                .fontWeight(.bold)
+                                .frame(width: 24, height: 24)
+                                .background(course
