@@ -1,0 +1,94 @@
+import SwiftUI
+
+// MARK: - 1. App Entry Point
+@main
+struct EventRegistrationApp: App {
+    var body: some Scene {
+        WindowGroup {
+            EventRegistrationView()
+        }
+    }
+}
+
+// MARK: - 2. Picker Option Model
+enum TicketTier: String, CaseIterable, Identifiable {
+    case general = "General Admission"
+    case student = "Student Pass"
+    case vip = "VIP All-Access"
+    
+    var id: String { rawValue }
+    
+    var priceLabel: String {
+        switch self {
+        case .general: return "$49"
+        case .student: return "$19"
+        case .vip: return "$129"
+        }
+    }
+}
+
+// MARK: - 3. Event Registration Form View (Tasks 1, 2, 3, 4)
+struct EventRegistrationView: View {
+    // Form Inputs
+    @State private var fullName: String = ""
+    @State private var email: String = ""
+    @State private var organization: String = ""
+    @State private var selectedTier: TicketTier = .general
+    @State private var agreedToTerms: Bool = false
+    @State private var receiveUpdates: Bool = true
+    
+    // Interaction & Confirmation State
+    @State private var hasAttemptedSubmit: Bool = false
+    @State private var isShowingConfirmation: Bool = false
+    
+    // MARK: Declarative Validation Logic (Tasks 3 & 4)
+    private var isNameValid: Bool {
+        fullName.trimmingCharacters(in: .whitespacesAndNewlines).count >= 2
+    }
+    
+    private var isEmailValid: Bool {
+        let trimmed = email.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.contains("@") && trimmed.contains(".") && trimmed.count >= 5
+    }
+    
+    private var isFormValid: Bool {
+        isNameValid && isEmailValid && agreedToTerms
+    }
+    
+    var body: some View {
+        NavigationStack {
+            Form {
+                // Header Banner inside Form
+                Section {
+                    EventHeaderBanner()
+                }
+                .listRowInsets(EdgeInsets())
+                .listRowBackground(Color.clear)
+                
+                // Section 1: Attendee Information (Text Fields + Validation Feedback)
+                Section {
+                    VStack(alignment: .leading, spacing: 6) {
+                        TextField("Full Name *", text: $fullName)
+                            .textContentType(.name)
+                            .autocorrectionDisabled()
+                        
+                        if (!fullName.isEmpty || hasAttemptedSubmit) && !isNameValid {
+                            ValidationWarningLabel(message: "Please enter at least 2 characters.")
+                        }
+                    }
+                    .padding(.vertical, 2)
+                    
+                    VStack(alignment: .leading, spacing: 6) {
+                        TextField("Email Address *", text: $email)
+                            .textContentType(.emailAddress)
+                            .keyboardType(.emailAddress)
+                            .textInputAutocapitalization(.never)
+                            .autocorrectionDisabled()
+                        
+                        if (!email.isEmpty || hasAttemptedSubmit) && !isEmailValid {
+                            ValidationWarningLabel(message: "Enter a valid email (e.g., alex@example.com).")
+                        }
+                    }
+                    .padding(.vertical, 2)
+                    
+                    // Multi-line capable optional field to handle
