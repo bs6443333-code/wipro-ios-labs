@@ -1,0 +1,121 @@
+import XCTest
+@testable import PersonalExpenseTracker
+
+final class MockExpenseService: ExpenseStorageService {
+    var stubbedExpenses: [Expense] = []
+    var shouldFail: Bool = false
+    
+    func loadInitialExpenses() throws -> [Expense] {
+        if shouldFail { throw URLError(.badServerResponse) }
+        return stubbedExpenses
+    }
+}
+
+final class ExpenseTrackerTests: XCTestCase {
+    
+    func testTotalSpent_reducesAllExpenseAmountsAccurately() {
+        let mock = MockExpenseService()
+        mock.stubbedExpenses = [
+            Expense(title: "Lunch", amount: 15.50, category: .food),
+            Expense(title: "Bus", amount: 24.50, category: .transport)
+        ]
+        let vm = ExpenseViewModel(service: mock)
+        XCTAssertEqual(vm.totalSpent, 40.00, accuracy: 0.001)
+    }
+    
+    func testCategoryTotals_groupsAndSortsDescendingByTotal() {
+        let mock = MockExpenseService()
+        mock.stubbedExpenses = [
+            Expense(title: "Coffee", amount: 5.00, category: .food),
+            Expense(title: "Books", amount: 60.00, category: .study),
+            Expense(title: "Dinner", amount: 20.00, category: .food)
+        ]
+        let vm = ExpenseViewModel(service: mock)
+        let totals = vm.categoryTotals
+        
+        XCTAssertEqual(totals.count, 2)
+        XCTAssertEqual(totals[0].category, .study)
+        XCTAssertEqual(totals[0].total, 60.00, accuracy: 0.001)
+        XCTAssertEqual(totals[1].category, .food)
+        XCTAssertEqual(totals[1].total, 25.00, accuracy: 0.001)
+    }
+    
+    func testBudgetBusinessRule_detectsWarningAndOverBudgetThresholds() throws {
+        let mock = MockExpenseService()
+        mock.stubbedExpenses = [Expense(title: "Rent Split", amount: 90.0, category: .utilities)]
+        let vm = ExpenseViewModel(service: mock)
+        try vm.updateBudget(newBudgetText: "100.0")
+        
+        XCTAssertTrue(vm.budgetStatusMessage.contains("Warning: 90%"))
+        
+        try vm.addExpense(title: "Groceries", amountText: "25.0", category: .food, date: Date(), notes: "")
+        XCTAssertEqual(vm.budgetStatusMessage, "Over budget by $15.00")
+    }
+    
+    func testFilteredExpenses_filtersByCategoryAndSearchQuery() {
+        let mock = MockExpenseService()
+        mock.stubbedExpenses = [
+            Expense(title: "Swift Book", amount: 30.0, category: .study),
+            Expense(title: "Pizza", amount: 18.0, category: .food),
+            Expense(title: "Algorithm Guide", amount: 25.0, category: .study)
+        ]
+        let vm = ExpenseViewModel(service: mock)
+        vm.selectedCategoryFilter = .study
+        vm.searchText = "Swift"
+        
+        XCTAssertEqual(vm.filteredExpenses.count, 1)
+        XCTAssertEqual(vm.filteredExpenses.first?.title, "Swift Book")
+    }
+    
+    func testAddExpense_withValidInput_appendsExpense() throws {
+        let vm = ExpenseViewModel(service: MockExpenseService())
+        try vm.addExpense(title: "Notebook", amountText: "12.75", category: .study, date: Date(), notes: "Lab notes")
+        
+        XCTAssertEqual(vm.expenses.count, 1)
+        XCTAssertEqual(vm.expenses.first?.amount, 12.75)
+    }
+    
+    func testAddExpense_withEmptyTitle_throwsValidationError() {
+        let vm = ExpenseViewModel(service: MockExpenseService())
+        XCTAssertThrowsError(
+            try vm.addExpense(title: " ", amountText: "10.0", category: .food, date: Date(), notes: "")
+        ) { error in
+            XCTAssertEqual(error as? ExpenseValidationError, .emptyTitle)
+        }
+    }
+    
+    func testAddExpense_withZeroOrNegativeAmount_throwsInvalidAmountError() {
+        let vm = ExpenseViewModel(service: MockExpenseService())
+        XCTAssertThrowsError(
+            try vm.addExpense(title: "Snack", amountText: "-5.0", category: .food, date: Date(), notes: "")
+        ) { error in
+            XCTAssertEqual(error as? ExpenseValidationError, .invalidAmount)
+        }
+    }
+    
+    func testUpdateBudget_belowMinimumTenDollars_throwsInvalidBudgetError() {
+        let vm = ExpenseViewModel(service: MockExpenseService())
+        XCTAssertThrowsError(try vm.updateBudget(newBudgetText: "5.00")) { error in
+            XCTAssertEqual(error as? ExpenseValidationError, .invalidBudget)
+        }
+    }
+    
+    func testDeleteExpense_removesMatchingExpenseByID() {
+        let item = Expense(title: "Metro", amount: 20.0, category: .transport)
+        let mock = MockExpenseService()
+        mock.stubbedExpenses = [item]
+        let vm = ExpenseViewModel(service: mock)
+        
+        vm.deleteExpense(id: item.id)
+        XCTAssertTrue(vm.expenses.isEmpty)
+    }
+    
+    func testServiceLoadFailure_setsLoadErrorMessage() {
+        let mock = MockExpenseService()
+        mock.shouldFail = true
+        let vm = ExpenseViewModel(service: mock)
+        
+        XCTAssertTrue(vm.expenses.isEmpty)
+        XCTAssertNotNil(vm.loadErrorMessage)
+    }
+}
