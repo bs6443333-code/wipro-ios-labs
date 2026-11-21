@@ -1,0 +1,140 @@
+import SwiftUI
+import Observation
+
+// MARK: - 1. App Entry Point
+@main
+struct CourseStateApp: App {
+    // Task 2: Shared observable model instantiated at the root
+    @State private var courseStore = CourseStore()
+    
+    var body: some Scene {
+        WindowGroup {
+            CourseListView(store: courseStore)
+        }
+    }
+}
+
+// MARK: - 2. Data Model & Shared Observable Store (Tasks 2 & 4)
+struct CourseItem: Identifiable, Hashable {
+    let id = UUID()
+    let title: String
+    let category: String
+    let instructor: String
+    let summary: String
+    var isFavourite: Bool = false
+}
+
+// Uses @Observable (iOS 17+ standard; if targeting iOS 16 or earlier, use ObservableObject + @Published)
+@Observable
+class CourseStore {
+    var courses: [CourseItem] = [
+        CourseItem(
+            title: "SwiftUI State & Data Flow",
+            category: "iOS Development",
+            instructor: "Jane Doe",
+            summary: "Master @State, @Binding, and @Observable to keep multiple views synchronized automatically.",
+            isFavourite: true
+        ),
+        CourseItem(
+            title: "Modern Concurrency in Swift",
+            category: "Programming",
+            instructor: "Dr. Sam Lee",
+            summary: "Learn async/await, Tasks, and Actors to write safe, responsive concurrent applications.",
+            isFavourite: false
+        ),
+        CourseItem(
+            title: "Accessible Mobile Design",
+            category: "Design",
+            instructor: "Alex Rivera",
+            summary: "Build inclusive interfaces using Dynamic Type, VoiceOver labels, and high-contrast color tokens.",
+            isFavourite: false
+        )
+    ]
+    
+    func toggleFavourite(for courseID: UUID) {
+        if let index = courses.firstIndex(where: { $0.id == courseID }) {
+            courses[index].isFavourite.toggle()
+        }
+    }
+}
+
+// MARK: - 3. Main List View (Tasks 1, 2, 3, 4)
+struct CourseListView: View {
+    // Task 2: Reference to shared observable model
+    @Bindable var store: CourseStore
+    
+    // Task 1: Local view state (only needed inside this view)
+    @State private var searchText: String = ""
+    @State private var showFavouritesOnly: Bool = false
+    
+    private var filteredCourses: [CourseItem] {
+        store.courses.filter { course in
+            let matchesSearch = searchText.isEmpty ||
+                course.title.localizedCaseInsensitiveContains(searchText) ||
+                course.category.localizedCaseInsensitiveContains(searchText)
+            let matchesFavourite = !showFavouritesOnly || course.isFavourite
+            return matchesSearch && matchesFavourite
+        }
+    }
+    
+    var body: some View {
+        NavigationStack {
+            VStack(spacing: 0) {
+                // Task 3: Pass a @Binding ($showFavouritesOnly) to a child filter view
+                FilterHeaderView(showFavouritesOnly: $showFavouritesOnly)
+                
+                List {
+                    ForEach(filteredCourses) { course in
+                        NavigationLink(value: course.id) {
+                            CourseRowView(
+                                course: course,
+                                onToggleFavourite: {
+                                    store.toggleFavourite(for: course.id)
+                                }
+                            )
+                        }
+                    }
+                }
+                .listStyle(.insetGrouped)
+            }
+            .navigationTitle("Courses")
+            // Task 1: Local @State bound to SwiftUI's search bar
+            .searchable(text: $searchText, prompt: "Search title or category")
+            // Task 4: Detail view reads/writes directly to the shared store so both stay in sync
+            .navigationDestination(for: UUID.self) { courseID in
+                if let index = store.courses.firstIndex(where: { $0.id == courseID }) {
+                    CourseDetailView(course: $store.courses[index])
+                }
+            }
+        }
+    }
+}
+
+// MARK: - 4. Child View Editing Parent State via @Binding (Task 3)
+struct FilterHeaderView: View {
+    // Task 3: Mutates parent-owned @State without owning the data itself
+    @Binding var showFavouritesOnly: Bool
+    
+    var body: some View {
+        HStack {
+            Toggle(isOn: $showFavouritesOnly.animation()) {
+                Label("Favourites Only", systemImage: showFavouritesOnly ? "heart.fill" : "heart")
+                    .font(.subheadline)
+                    .fontWeight(.medium)
+                    .foregroundColor(showFavouritesOnly ? .pink : .primary)
+            }
+        }
+        .padding(.horizontal)
+        .padding(.vertical, 10)
+        .background(Color(.secondarySystemGroupedBackground))
+    }
+}
+
+// MARK: - 5. List Row Subview (Task 4)
+struct CourseRowView: View {
+    let course: CourseItem
+    let onToggleFavourite: () -> Void
+    
+    var body: some View {
+        HStack(spacing: 12) {
+            VStack(alignment: .leading
