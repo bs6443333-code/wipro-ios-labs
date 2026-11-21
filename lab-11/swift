@@ -1,0 +1,190 @@
+import SwiftUI
+
+// MARK: - 1. App Entry Point
+@main
+struct ProfilingLabApp: App {
+    var body: some Scene {
+        WindowGroup {
+            PerformanceProfilingView()
+        }
+    }
+}
+
+// MARK: - 2. Data Model
+struct LogEntry: Identifiable {
+    let id: Int
+    let title: String
+    let category: String
+    let timestamp: Date
+    let payload: String
+}
+
+// MARK: - 3. Repeatable Workload Generator (Task 1)
+enum WorkloadData {
+    static let entries: [LogEntry] = (1...2_000).map { index in
+        let categories = ["Network", "Database", "UI", "Auth"]
+        return LogEntry(
+            id: index,
+            title: "Event Trace #\(index)",
+            category: categories[index % categories.count],
+            timestamp: Date().addingTimeInterval(Double(-index * 45)),
+            payload: "Diagnostic payload packet \(index) — status OK"
+        )
+    }
+}
+
+// MARK: - 4. Cached Formatter for Targeted Optimization (Task 5)
+enum CachedFormatters {
+    static let mediumDateTime: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.dateStyle = .medium
+        formatter.timeStyle = .medium
+        return formatter
+    }()
+}
+
+// MARK: - 5. Profiling View: Baseline vs. Optimized (Tasks 1, 3, 4, 5)
+enum ProfilingMode: String, CaseIterable, Identifiable {
+    case baseline = "Baseline (Unoptimized)"
+    case optimized = "Optimized"
+    var id: String { rawValue }
+}
+
+struct PerformanceProfilingView: View {
+    @State private var mode: ProfilingMode = .baseline
+    @State private var searchText: String = ""
+    @State private var refreshCounter: Int = 0
+    @State private var cachedFilteredEntries: [LogEntry] = WorkloadData.entries
+    
+    // Baseline computation: runs expensive sorting + string matching directly during body evaluation
+    private var baselineFilteredEntries: [LogEntry] {
+        WorkloadData.entries
+            .filter { entry in
+                searchText.isEmpty ||
+                entry.title.localizedCaseInsensitiveContains(searchText) ||
+                entry.payload.localizedCaseInsensitiveContains(searchText)
+            }
+            .sorted { $0.timestamp > $1.timestamp }
+    }
+    
+    var body: some View {
+        NavigationStack {
+            VStack(spacing: 12) {
+                // Switch between Before (Baseline) and After (Optimized)
+                Picker("Mode", selection: $mode) {
+                    ForEach(ProfilingMode.allCases) { currentMode in
+                        Text(currentMode.rawValue).tag(currentMode)
+                    }
+                }
+                .pickerStyle(.segmented)
+                .padding(.horizontal)
+                
+                // Repeatable trigger button to simulate rapid state updates
+                HStack {
+                    Button("Trigger Repeatable State Update (\(refreshCounter))") {
+                        refreshCounter += 1
+                    }
+                    .buttonStyle(.borderedProminent)
+                    
+                    Spacer()
+                }
+                .padding(.horizontal)
+                
+                // List rendering 2,000 items
+                List {
+                    if mode == .baseline {
+                        ForEach(baselineFilteredEntries) { entry in
+                            BaselineRowView(entry: entry, tick: refreshCounter)
+                        }
+                    } else {
+                        ForEach(cachedFilteredEntries) { entry in
+                            OptimizedRowView(entry: entry, tick: refreshCounter)
+                        }
+                    }
+                }
+                .listStyle(.plain)
+            }
+            .navigationTitle("Instruments Lab")
+            .searchable(text: $searchText, prompt: "Filter 2,000 log entries")
+            .onChange(of: searchText) { _, newValue in
+                recomputeOptimizedFilter(query: newValue)
+            }
+        }
+    }
+    
+    private func recomputeOptimizedFilter(query: String) {
+        if query.isEmpty {
+            cachedFilteredEntries = WorkloadData.entries
+        } else {
+            cachedFilteredEntries = WorkloadData.entries.filter { entry in
+                entry.title.localizedCaseInsensitiveContains(query) ||
+                entry.payload.localizedCaseInsensitiveContains(query)
+            }
+        }
+    }
+}
+
+// MARK: - 6. Row Subviews (Baseline vs. Optimized)
+
+/// ISSUE (Task 4): Allocates a brand-new DateFormatter inside `body` on every row render and state update
+struct BaselineRowView: View {
+    let entry: LogEntry
+    let tick: Int
+    
+    private var formattedDate: String {
+        let formatter = DateFormatter()
+        formatter.dateStyle = .medium
+        formatter.timeStyle = .medium
+        return formatter.string(from: entry.timestamp)
+    }
+    
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack {
+                Text(entry.title)
+                    .font(.headline)
+                Spacer()
+                Text(entry.category)
+                    .font(.caption)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 2)
+                    .background(Color.orange.opacity(0.15))
+                    .clipShape(Capsule())
+            }
+            Text("\(formattedDate) • Render #\(tick)")
+                .font(.caption)
+                .foregroundColor(.secondary)
+        }
+        .padding(.vertical, 2)
+    }
+}
+
+/// FIX (Task 5): Reuses a single static DateFormatter instance and avoids redundant sorting
+struct OptimizedRowView: View {
+    let entry: LogEntry
+    let tick: Int
+    
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack {
+                Text(entry.title)
+                    .font(.headline)
+                Spacer()
+                Text(entry.category)
+                    .font(.caption)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 2)
+                    .background(Color.green.opacity(0.15))
+                    .clipShape(Capsule())
+            }
+            Text("\(CachedFormatters.mediumDateTime.string(from: entry.timestamp)) • Render #\(tick)")
+                .font(.caption)
+                .foregroundColor(.secondary)
+        }
+        .padding(.vertical, 2)
+    }
+}
+
+#Preview {
+    PerformanceProfilingView()
+}
