@@ -1,0 +1,232 @@
+import Foundation
+import Observation
+import XCTest
+
+// MARK: - 1. Grade Calculator Logic (Tasks 2 & 3)
+enum GradeError: Error, Equatable {
+    case emptyScores
+    case outOfRange(Double)
+}
+
+struct GradeCalculator {
+    static func calculateAverage(scores: [Double]) throws -> Double {
+        guard !scores.isEmpty else {
+            throw GradeError.emptyScores
+        }
+        
+        for score in scores {
+            if score < 0.0 || score > 100.0 {
+                throw GradeError.outOfRange(score)
+            }
+        }
+        
+        let total = scores.reduce(0, +)
+        return total / Double(scores.count)
+    }
+    
+    static func letterGrade(for percentage: Double) throws -> String {
+        guard percentage >= 0.0 && percentage <= 100.0 else {
+            throw GradeError.outOfRange(percentage)
+        }
+        
+        switch percentage {
+        case 90.0...100.0: return "A"
+        case 80.0..<90.0:  return "B"
+        case 70.0..<80.0:  return "C"
+        case 60.0..<70.0:  return "D"
+        default:           return "F"
+        }
+    }
+}
+
+// MARK: - 2. Form Validator Logic (Tasks 2 & 3)
+struct RegistrationValidator {
+    static func isValidName(_ name: String) -> Bool {
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.count >= 2 && trimmed.count <= 50
+    }
+    
+    static func isValidEmail(_ email: String) -> Bool {
+        let trimmed = email.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty, !trimmed.contains(" ") else { return false }
+        let parts = trimmed.split(separator: "@")
+        guard parts.count == 2, !parts[0].isEmpty, parts[1].contains(".") else {
+            return false
+        }
+        return true
+    }
+    
+    static func canSubmit(name: String, email: String, acceptedTerms: Bool) -> Bool {
+        return isValidName(name) && isValidEmail(email) && acceptedTerms
+    }
+}
+
+// MARK: - 3. ViewModel & Service Protocol for Dependency Injection (Tasks 2 & 5)
+struct CourseSummary: Identifiable, Equatable {
+    let id: String
+    let title: String
+    var isBookmarked: Bool
+}
+
+protocol CourseFetchingService {
+    func fetchCourses() async throws -> [CourseSummary]
+}
+
+@Observable
+final class CourseCatalogViewModel {
+    private let service: CourseFetchingService
+    
+    var courses: [CourseSummary] = []
+    var errorMessage: String?
+    var isLoading: Bool = false
+    
+    init(service: CourseFetchingService) {
+        self.service = service
+    }
+    
+    @MainActor
+    func loadCourses() async {
+        isLoading = true
+        errorMessage = nil
+        
+        do {
+            courses = try await service.fetchCourses()
+        } catch {
+            courses = []
+            errorMessage = "Failed to load courses."
+        }
+        
+        isLoading = false
+    }
+    
+    func toggleBookmark(courseID: String) {
+        guard let index = courses.firstIndex(where: { $0.id == courseID }) else { return }
+        courses[index].isBookmarked.toggle()
+    }
+}
+
+// MARK: - 4. Fake Service for Dependency Injection (Task 5)
+final class FakeCourseService: CourseFetchingService {
+    var stubbedCourses: [CourseSummary] = []
+    var shouldThrowError: Bool = false
+    
+    func fetchCourses() async throws -> [CourseSummary] {
+        if shouldThrowError {
+            throw URLError(.notConnectedToInternet)
+        }
+        return stubbedCourses
+    }
+}
+
+// MARK: - 5. XCTest Unit Test Suite (11 Tests)
+final class Lab10aUnitTests: XCTestCase {
+    
+    // MARK: Grade Calculation Tests (Normal, Boundary, Invalid)
+    
+    func testCalculateAverage_withNormalScores_returnsExpectedMean() throws {
+        let scores = [80.0, 90.0, 100.0]
+        let average = try GradeCalculator.calculateAverage(scores: scores)
+        XCTAssertEqual(average, 90.0, accuracy: 0.001)
+    }
+    
+    func testCalculateAverage_withBoundaryZeroAndHundred_succeeds() throws {
+        let scores = [0.0, 100.0]
+        let average = try GradeCalculator.calculateAverage(scores: scores)
+        XCTAssertEqual(average, 50.0, accuracy: 0.001)
+    }
+    
+    func testCalculateAverage_withEmptyArray_throwsEmptyScoresError() {
+        XCTAssertThrowsError(try GradeCalculator.calculateAverage(scores: [])) { error in
+            XCTAssertEqual(error as? GradeError, .emptyScores)
+        }
+    }
+    
+    func testCalculateAverage_withOutOfRangeScore_throwsOutOfRangeError() {
+        XCTAssertThrowsError(try GradeCalculator.calculateAverage(scores: [85.0, 105.0])) { error in
+            XCTAssertEqual(error as? GradeError, .outOfRange(105.0))
+        }
+    }
+    
+    func testLetterGrade_atExactGradeBoundaries_returnsCorrectLetter() throws {
+        XCTAssertEqual(try GradeCalculator.letterGrade(for: 90.0), "A")
+        XCTAssertEqual(try GradeCalculator.letterGrade(for: 89.99), "B")
+        XCTAssertEqual(try GradeCalculator.letterGrade(for: 60.0), "D")
+        XCTAssertEqual(try GradeCalculator.letterGrade(for: 59.99), "F")
+    }
+    
+    // MARK: Form Validation Tests (Normal, Boundary, Invalid)
+    
+    func testValidator_withValidInputsAndTermsAccepted_allowsSubmission() {
+        let isValid = RegistrationValidator.canSubmit(
+            name: "Bharat Kumar",
+            email: "bharat@example.com",
+            acceptedTerms: true
+        )
+        XCTAssertTrue(isValid)
+    }
+    
+    func testValidator_withBoundaryTwoCharacterName_isValid() {
+        XCTAssertTrue(RegistrationValidator.isValidName("Jo"))
+        XCTAssertFalse(RegistrationValidator.isValidName(" J "))
+    }
+    
+    func testValidator_withMalformedEmailsOrUncheckedTerms_rejectsSubmission() {
+        XCTAssertFalse(RegistrationValidator.isValidEmail("missing-at-symbol.com"))
+        XCTAssertFalse(RegistrationValidator.isValidEmail("user@nodomain"))
+        XCTAssertFalse(
+            RegistrationValidator.canSubmit(
+                name: "Bharat Kumar",
+                email: "bharat@example.com",
+                acceptedTerms: false
+            )
+        )
+    }
+    
+    // MARK: ViewModel Operation Tests with Fake Service (Tasks 2 & 5)
+    
+    @MainActor
+    func testViewModelLoadCourses_withFakeServiceData_populatesCourses() async {
+        let fakeService = FakeCourseService()
+        fakeService.stubbedCourses = [
+            CourseSummary(id: "C1", title: "Swift Testing", isBookmarked: false),
+            CourseSummary(id: "C2", title: "SwiftUI Architecture", isBookmarked: true)
+        ]
+        let viewModel = CourseCatalogViewModel(service: fakeService)
+        
+        await viewModel.loadCourses()
+        
+        XCTAssertFalse(viewModel.isLoading)
+        XCTAssertNil(viewModel.errorMessage)
+        XCTAssertEqual(viewModel.courses.count, 2)
+        XCTAssertEqual(viewModel.courses.first?.title, "Swift Testing")
+    }
+    
+    @MainActor
+    func testViewModelLoadCourses_whenServiceFails_setsErrorMessage() async {
+        let fakeService = FakeCourseService()
+        fakeService.shouldThrowError = true
+        let viewModel = CourseCatalogViewModel(service: fakeService)
+        
+        await viewModel.loadCourses()
+        
+        XCTAssertFalse(viewModel.isLoading)
+        XCTAssertTrue(viewModel.courses.isEmpty)
+        XCTAssertEqual(viewModel.errorMessage, "Failed to load courses.")
+    }
+    
+    @MainActor
+    func testViewModelToggleBookmark_updatesTargetCourseState() async {
+        let fakeService = FakeCourseService()
+        fakeService.stubbedCourses = [
+            CourseSummary(id: "C1", title: "Swift Testing", isBookmarked: false)
+        ]
+        let viewModel = CourseCatalogViewModel(service: fakeService)
+        await viewModel.loadCourses()
+        
+        viewModel.toggleBookmark(courseID: "C1")
+        XCTAssertTrue(viewModel.courses[0].isBookmarked)
+        
+        viewModel.toggleBookmark(courseID: "UNKNOWN")
+        XCTAssertTrue(viewModel.courses[0].isBookmarked)
+    }
+}
