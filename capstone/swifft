@@ -1,0 +1,607 @@
+import SwiftUI
+import Observation
+
+// MARK: - 1. App Entry Point
+@main
+struct PersonalExpenseTrackerApp: App {
+    @State private var viewModel = ExpenseViewModel(service: LocalExpenseService())
+    
+    var body: some Scene {
+        WindowGroup {
+            DashboardView(viewModel: viewModel)
+        }
+    }
+}
+
+// MARK: - 2. Domain Models (Task 2)
+enum ExpenseCategory: String, CaseIterable, Identifiable, Codable {
+    case food = "Food & Dining"
+    case transport = "Transport"
+    case utilities = "Utilities"
+    case study = "Books & Courses"
+    case leisure = "Leisure"
+    
+    var id: String { rawValue }
+    
+    var iconName: String {
+        switch self {
+        case .food: return "fork.knife"
+        case .transport: return "bus.fill"
+        case .utilities: return "bolt.fill"
+        case .study: return "book.fill"
+        case .leisure: return "gamecontroller.fill"
+        }
+    }
+    
+    var tintColor: Color {
+        switch self {
+        case .food: return .orange
+        case .transport: return .blue
+        case .utilities: return .yellow
+        case .study: return .purple
+        case .leisure: return .green
+        }
+    }
+}
+
+struct Expense: Identifiable, Hashable, Codable {
+    let id: UUID
+    var title: String
+    var amount: Double
+    var category: ExpenseCategory
+    var date: Date
+    var notes: String
+    
+    init(
+        id: UUID = UUID(),
+        title: String,
+        amount: Double,
+        category: ExpenseCategory,
+        date: Date = Date(),
+        notes: String = ""
+    ) {
+        self.id = id
+        self.title = title
+        self.amount = amount
+        self.category = category
+        self.date = date
+        self.notes = notes
+    }
+}
+
+enum ExpenseValidationError: LocalizedError, Equatable {
+    case emptyTitle
+    case invalidAmount
+    case invalidBudget
+    
+    var errorDescription: String? {
+        switch self {
+        case .emptyTitle:
+            return "Expense title must be at least 2 characters."
+        case .invalidAmount:
+            return "Amount must be greater than $0.00."
+        case .invalidBudget:
+            return "Monthly budget must be at least $10.00."
+        }
+    }
+}
+
+// MARK: - 3. Reusable Service Protocol & Implementation (Task 2)
+protocol ExpenseStorageService {
+    func loadInitialExpenses() throws -> [Expense]
+}
+
+final class LocalExpenseService: ExpenseStorageService {
+    var shouldSimulateError: Bool = false
+    
+    func loadInitialExpenses() throws -> [Expense] {
+        if shouldSimulateError {
+            throw URLError(.cannotLoadFromNetwork)
+        }
+        return [
+            Expense(title: "Campus Cafeteria Lunch", amount: 12.50, category: .food, notes: "Lunch with project team"),
+            Expense(title: "Metro Transit Card", amount: 35.00, category: .transport, notes: "Monthly commuter pass"),
+            Expense(title: "Swift Concurrency E-Book", amount: 29.99, category: .study, notes: "Reference for iOS lab"),
+            Expense(title: "Electricity & Wi-Fi Split", amount: 65.00, category: .utilities, notes: "Flat share utility bill")
+        ]
+    }
+}
+
+// MARK: - 4. ViewModel with Collection Transformations & Business Rules (Tasks 2, 3, 6)
+@Observable
+final class ExpenseViewModel {
+    private let service: ExpenseStorageService
+    
+    var expenses: [Expense] = []
+    var monthlyBudget: Double = 300.00
+    var selectedCategoryFilter: ExpenseCategory? = nil
+    var searchText: String = ""
+    var loadErrorMessage: String? = nil
+    
+    init(service: ExpenseStorageService) {
+        self.service = service
+        reloadExpenses()
+    }
+    
+    // Collection Transformation 1: Multi-criteria filtering & date sorting
+    var filteredExpenses: [Expense] {
+        expenses
+            .filter { expense in
+                let matchesCategory = selectedCategoryFilter == nil || expense.category == selectedCategoryFilter
+                let matchesSearch = searchText.isEmpty ||
+                    expense.title.localizedCaseInsensitiveContains(searchText) ||
+                    expense.notes.localizedCaseInsensitiveContains(searchText)
+                return matchesCategory && matchesSearch
+            }
+            .sorted { $0.date > $1.date }
+    }
+    
+    // Collection Transformation 2: Reduce total spend
+    var totalSpent: Double {
+        expenses.reduce(0) { $0 + $1.amount }
+    }
+    
+    // Collection Transformation 3: Grouping spend by category & sorting highest-first
+    var categoryTotals: [(category: ExpenseCategory, total: Double)] {
+        let grouped = Dictionary(grouping: expenses, by: \.category)
+        return grouped
+            .map { (category: $0.key, total: $0.value.reduce(0) { $0 + $1.amount }) }
+            .sorted { $0.total > $1.total }
+    }
+    
+    // Business Rule 1: Remaining budget & utilization ratio
+    var remainingBudget: Double {
+        monthlyBudget - totalSpent
+    }
+    
+    var budgetUtilization: Double {
+        guard monthlyBudget > 0 else { return 0 }
+        return totalSpent / monthlyBudget
+    }
+    
+    // Business Rule 2: Budget threshold alert status (>= 85% warning, > 100% over budget)
+    var budgetStatusMessage: String {
+        if totalSpent > monthlyBudget {
+            return "Over budget by $\(String(format: "%.2f", abs(remainingBudget)))"
+        } else if budgetUtilization >= 0.85 {
+            return "Warning: \(Int(budgetUtilization * 100))% of monthly budget used"
+        } else {
+            return "On track • $\(String(format: "%.2f", remainingBudget)) left"
+        }
+    }
+    
+    // CRUD & Validation Operations
+    func reloadExpenses() {
+        do {
+            expenses = try service.loadInitialExpenses()
+            loadErrorMessage = nil
+        } catch {
+            expenses = []
+            loadErrorMessage = "Unable to load expense records. Please try again."
+        }
+    }
+    
+    func addExpense(title: String, amountText: String, category: ExpenseCategory, date: Date, notes: String) throws {
+        let trimmedTitle = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard trimmedTitle.count >= 2 else {
+            throw ExpenseValidationError.emptyTitle
+        }
+        guard let amount = Double(amountText), amount > 0 else {
+            throw ExpenseValidationError.invalidAmount
+        }
+        let newExpense = Expense(
+            title: trimmedTitle,
+            amount: amount,
+            category: category,
+            date: date,
+            notes: notes.trimmingCharacters(in: .whitespacesAndNewlines)
+        )
+        expenses.append(newExpense)
+    }
+    
+    func deleteExpense(id: UUID) {
+        expenses.removeAll { $0.id == id }
+    }
+    
+    func updateBudget(newBudgetText: String) throws {
+        guard let parsed = Double(newBudgetText), parsed >= 10.0 else {
+            throw ExpenseValidationError.invalidBudget
+        }
+        monthlyBudget = parsed
+    }
+}
+
+// MARK: - 5. Screen 1: Dashboard & Expense List (Tasks 1, 4, 6)
+struct DashboardView: View {
+    @Bindable var viewModel: ExpenseViewModel
+    @State private var isShowingAddSheet = false
+    
+    var body: some View {
+        NavigationStack {
+            Group {
+                if let errorMessage = viewModel.loadErrorMessage {
+                    // Error State (Task 6)
+                    ContentUnavailableView {
+                        Label("Load Error", systemImage: "exclamationmark.triangle.fill")
+                    } description: {
+                        Text(errorMessage)
+                    } actions: {
+                        Button("Retry") { viewModel.reloadExpenses() }
+                            .buttonStyle(.borderedProminent)
+                    }
+                } else {
+                    List {
+                        // Budget Summary Card Section
+                        Section {
+                            BudgetSummaryCard(viewModel: viewModel)
+                        }
+                        .listRowInsets(EdgeInsets())
+                        .listRowBackground(Color.clear)
+                        
+                        // Category Filter Strip
+                        Section("Filter by Category") {
+                            ScrollView(.horizontal, showsIndicators: false) {
+                                HStack(spacing: 8) {
+                                    FilterChip(title: "All", isSelected: viewModel.selectedCategoryFilter == nil) {
+                                        viewModel.selectedCategoryFilter = nil
+                                    }
+                                    ForEach(ExpenseCategory.allCases) { category in
+                                        FilterChip(
+                                            title: category.rawValue,
+                                            isSelected: viewModel.selectedCategoryFilter == category
+                                        ) {
+                                            viewModel.selectedCategoryFilter = category
+                                        }
+                                    }
+                                }
+                                .padding(.vertical, 4)
+                            }
+                        }
+                        
+                        // Expense Transactions Section
+                        Section("Transactions (\(viewModel.filteredExpenses.count))") {
+                            if viewModel.filteredExpenses.isEmpty {
+                                // Empty State (Task 6)
+                                ContentUnavailableView(
+                                    "No Expenses Found",
+                                    systemImage: "tray",
+                                    description: Text("Tap + to log a new expense or clear active filters.")
+                                )
+                            } else {
+                                ForEach(viewModel.filteredExpenses) { expense in
+                                    NavigationLink(value: expense) {
+                                        ExpenseRowView(expense: expense)
+                                    }
+                                }
+                                .onDelete { indexSet in
+                                    for index in indexSet {
+                                        let target = viewModel.filteredExpenses[index]
+                                        viewModel.deleteExpense(id: target.id)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            .navigationTitle("Expense Tracker")
+            .searchable(text: $viewModel.searchText, prompt: "Search title or notes")
+            // Screen 2 Destination: Detail View
+            .navigationDestination(for: Expense.self) { expense in
+                ExpenseDetailView(expense: expense) {
+                    viewModel.deleteExpense(id: expense.id)
+                }
+            }
+            .toolbar {
+                // Screen 4 Navigation Destination: Budget Settings
+                ToolbarItem(placement: .topBarLeading) {
+                    NavigationLink {
+                        BudgetSettingsView(viewModel: viewModel)
+                    } label: {
+                        Label("Budget", systemImage: "slider.horizontal.3")
+                    }
+                }
+                
+                // Screen 3 Sheet: Add Expense Form
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button {
+                        isShowingAddSheet = true
+                    } label: {
+                        Label("Add Expense", systemImage: "plus")
+                    }
+                }
+            }
+            .sheet(isPresented: $isShowingAddSheet) {
+                AddExpenseView(viewModel: viewModel)
+            }
+        }
+    }
+}
+
+// MARK: - 6. Screen 2: Expense Detail View (Task 1)
+struct ExpenseDetailView: View {
+    let expense: Expense
+    let onDelete: () -> Void
+    @Environment(\.dismiss) private var dismiss
+    
+    var body: some View {
+        List {
+            Section {
+                HStack(spacing: 14) {
+                    Image(systemName: expense.category.iconName)
+                        .font(.title2)
+                        .foregroundColor(expense.category.tintColor)
+                        .frame(width: 48, height: 48)
+                        .background(expense.category.tintColor.opacity(0.15))
+                        .clipShape(RoundedRectangle(cornerRadius: 12))
+                    
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(expense.title)
+                            .font(.title3)
+                            .fontWeight(.bold)
+                        Text(expense.category.rawValue)
+                            .font(.subheadline)
+                            .foregroundColor(.secondary)
+                    }
+                }
+                .padding(.vertical, 4)
+            }
+            
+            Section("Details") {
+                LabeledContent("Amount", value: String(format: "$%.2f", expense.amount))
+                LabeledContent("Date", value: expense.date.formatted(date: .abbreviated, time: .shortened))
+                if !expense.notes.isEmpty {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Notes")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                        Text(expense.notes)
+                            .font(.body)
+                    }
+                }
+            }
+            
+            Section {
+                Button(role: .destructive) {
+                    onDelete()
+                    dismiss()
+                } label: {
+                    Label("Delete Expense", systemImage: "trash")
+                }
+            }
+        }
+        .navigationTitle("Expense Details")
+        .navigationBarTitleDisplayMode(.inline)
+    }
+}
+
+// MARK: - 7. Screen 3: Add Expense Form with Validation (Tasks 1 & 6)
+struct AddExpenseView: View {
+    var viewModel: ExpenseViewModel
+    @Environment(\.dismiss) private var dismiss
+    
+    @State private var title: String = ""
+    @State private var amountText: String = ""
+    @State private var category: ExpenseCategory = .food
+    @State private var date: Date = Date()
+    @State private var notes: String = ""
+    @State private var validationMessage: String?
+    
+    private var isFormReady: Bool {
+        title.trimmingCharacters(in: .whitespacesAndNewlines).count >= 2 &&
+        (Double(amountText) ?? 0) > 0
+    }
+    
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section("Expense Information") {
+                    TextField("Title (e.g., Coffee, Textbook) *", text: $title)
+                    
+                    TextField("Amount (e.g., 14.50) *", text: $amountText)
+                        .keyboardType(.decimalPad)
+                    
+                    Picker("Category", selection: $category) {
+                        ForEach(ExpenseCategory.allCases) { item in
+                            Label(item.rawValue, systemImage: item.iconName).tag(item)
+                        }
+                    }
+                    
+                    DatePicker("Date", selection: $date, displayedComponents: [.date, .hourAndMinute])
+                }
+                
+                Section("Optional Notes") {
+                    TextField("Add details...", text: $notes, axis: .vertical)
+                        .lineLimit(2...4)
+                }
+                
+                if let validationMessage {
+                    Section {
+                        Label(validationMessage, systemImage: "exclamationmark.circle.fill")
+                            .foregroundColor(.red)
+                            .font(.subheadline)
+                    }
+                }
+            }
+            .navigationTitle("New Expense")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { dismiss() }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Save") {
+                        saveExpense()
+                    }
+                    .disabled(!isFormReady)
+                }
+            }
+        }
+    }
+    
+    private func saveExpense() {
+        do {
+            try viewModel.addExpense(
+                title: title,
+                amountText: amountText,
+                category: category,
+                date: date,
+                notes: notes
+            )
+            dismiss()
+        } catch {
+            validationMessage = error.localizedDescription
+        }
+    }
+}
+
+// MARK: - 8. Screen 4: Budget Settings & Category Breakdown (Tasks 1, 3, 6)
+struct BudgetSettingsView: View {
+    var viewModel: ExpenseViewModel
+    @State private var budgetInput: String = ""
+    @State private var feedbackMessage: String?
+    @State private var isError: Bool = false
+    
+    var body: some View {
+        Form {
+            Section("Monthly Budget Limit") {
+                TextField("Monthly Budget ($)", text: $budgetInput)
+                    .keyboardType(.decimalPad)
+                
+                Button("Update Budget") {
+                    do {
+                        try viewModel.updateBudget(newBudgetText: budgetInput)
+                        isError = false
+                        feedbackMessage = "Monthly budget updated to $\(String(format: "%.2f", viewModel.monthlyBudget))."
+                    } catch {
+                        isError = true
+                        feedbackMessage = error.localizedDescription
+                    }
+                }
+                .buttonStyle(.borderedProminent)
+                
+                if let feedbackMessage {
+                    Label(feedbackMessage, systemImage: isError ? "xmark.circle.fill" : "checkmark.circle.fill")
+                        .font(.caption)
+                        .foregroundColor(isError ? .red : .green)
+                }
+            }
+            
+            Section("Spending Breakdown by Category") {
+                if viewModel.categoryTotals.isEmpty {
+                    Text("No expenses recorded yet.")
+                        .foregroundColor(.secondary)
+                } else {
+                    ForEach(viewModel.categoryTotals, id: \.category) { item in
+                        HStack {
+                            Label(item.category.rawValue, systemImage: item.category.iconName)
+                                .foregroundColor(item.category.tintColor)
+                            Spacer()
+                            Text(String(format: "$%.2f", item.total))
+                                .fontWeight(.semibold)
+                        }
+                    }
+                }
+            }
+        }
+        .navigationTitle("Budget & Insights")
+        .onAppear {
+            budgetInput = String(format: "%.2f", viewModel.monthlyBudget)
+        }
+    }
+}
+
+// MARK: - 9. Reusable UI Components
+struct BudgetSummaryCard: View {
+    let viewModel: ExpenseViewModel
+    
+    private var progressColor: Color {
+        if viewModel.totalSpent > viewModel.monthlyBudget { return .red }
+        if viewModel.budgetUtilization >= 0.85 { return .orange }
+        return .green
+    }
+    
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                Text("MONTHLY SPENDING")
+                    .font(.caption)
+                    .fontWeight(.bold)
+                    .foregroundColor(.secondary)
+                Spacer()
+                Text(String(format: "Budget: $%.2f", viewModel.monthlyBudget))
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
+            
+            Text(String(format: "$%.2f", viewModel.totalSpent))
+                .font(.largeTitle)
+                .fontWeight(.bold)
+            
+            ProgressView(value: min(viewModel.budgetUtilization, 1.0))
+                .tint(progressColor)
+            
+            Text(viewModel.budgetStatusMessage)
+                .font(.caption)
+                .fontWeight(.medium)
+                .foregroundColor(progressColor)
+        }
+        .padding()
+        .background(Color(.secondarySystemGroupedBackground))
+        .clipShape(RoundedRectangle(cornerRadius: 16))
+        .padding(.vertical, 6)
+    }
+}
+
+struct ExpenseRowView: View {
+    let expense: Expense
+    
+    var body: some View {
+        HStack(spacing: 12) {
+            Image(systemName: expense.category.iconName)
+                .foregroundColor(expense.category.tintColor)
+                .frame(width: 34, height: 34)
+                .background(expense.category.tintColor.opacity(0.15))
+                .clipShape(Circle())
+            
+            VStack(alignment: .leading, spacing: 2) {
+                Text(expense.title)
+                    .font(.headline)
+                Text(expense.category.rawValue)
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
+            
+            Spacer()
+            
+            Text(String(format: "$%.2f", expense.amount))
+                .font(.subheadline)
+                .fontWeight(.semibold)
+        }
+        .padding(.vertical, 2)
+    }
+}
+
+struct FilterChip: View {
+    let title: String
+    let isSelected: Bool
+    let action: () -> Void
+    
+    var body: some View {
+        Button(action: action) {
+            Text(title)
+                .font(.caption)
+                .fontWeight(.medium)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 6)
+                .background(isSelected ? Color.accentColor : Color(.secondarySystemGroupedBackground))
+                .foregroundColor(isSelected ? .white : .primary)
+                .clipShape(Capsule())
+        }
+        .buttonStyle(.plain)
+    }
+}
+
+#Preview {
+    DashboardView(viewModel: ExpenseViewModel(service: LocalExpenseService()))
+}
