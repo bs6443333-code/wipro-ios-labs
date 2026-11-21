@@ -1,0 +1,141 @@
+import SwiftUI
+import XCTest
+
+// MARK: - 1. App Entry Point (App Target)
+@main
+struct Lab10bApp: App {
+    var body: some Scene {
+        WindowGroup {
+            CourseEnrollmentFormView()
+        }
+    }
+}
+
+// MARK: - 2. SwiftUI Form View with Accessibility Identifiers (Tasks 1, 2, 3)
+struct CourseEnrollmentFormView: View {
+    @State private var studentName: String = ""
+    @State private var studentEmail: String = ""
+    @State private var selectedTrack: String = "iOS Development"
+    @State private var validationError: String?
+    @State private var confirmationMessage: String?
+    
+    private let tracks = ["iOS Development", "Backend Systems", "UI/UX Design"]
+    
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section("Student Details") {
+                    TextField("Full Name", text: $studentName)
+                        .autocorrectionDisabled()
+                        .accessibilityIdentifier("nameTextField")
+                    
+                    TextField("Email Address", text: $studentEmail)
+                        .keyboardType(.emailAddress)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
+                        .accessibilityIdentifier("emailTextField")
+                    
+                    Picker("Track", selection: $selectedTrack) {
+                        ForEach(tracks, id: \.self) { track in
+                            Text(track).tag(track)
+                        }
+                    }
+                    .accessibilityIdentifier("trackPicker")
+                }
+                
+                Section {
+                    Button("Submit Enrollment") {
+                        handleSubmit()
+                    }
+                    .fontWeight(.semibold)
+                    .accessibilityIdentifier("submitButton")
+                }
+                
+                if let validationError {
+                    Section {
+                        Label(validationError, systemImage: "exclamationmark.triangle.fill")
+                            .foregroundColor(.red)
+                            .accessibilityIdentifier("validationErrorLabel")
+                    }
+                }
+                
+                if let confirmationMessage {
+                    Section {
+                        Label(confirmationMessage, systemImage: "checkmark.circle.fill")
+                            .foregroundColor(.green)
+                            .accessibilityIdentifier("confirmationBanner")
+                    }
+                }
+            }
+            .navigationTitle("Course Enrollment")
+        }
+    }
+    
+    private func handleSubmit() {
+        let trimmedName = studentName.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmedEmail = studentEmail.trimmingCharacters(in: .whitespacesAndNewlines)
+        
+        guard trimmedName.count >= 2 else {
+            confirmationMessage = nil
+            validationError = "Please enter a valid full name."
+            return
+        }
+        
+        guard trimmedEmail.contains("@"), trimmedEmail.contains(".") else {
+            confirmationMessage = nil
+            validationError = "Please enter a valid email address."
+            return
+        }
+        
+        validationError = nil
+        confirmationMessage = "Enrolled \(trimmedName) in \(selectedTrack)!"
+    }
+}
+
+// MARK: - 3. XCUITest Suite (UI Testing Target - Tasks 1, 2, 3, 4)
+final class Lab10bUITests: XCTestCase {
+    
+    private var app: XCUIApplication!
+    
+    override func setUpWithError() throws {
+        continueAfterFailure = false
+        app = XCUIApplication()
+        app.launch()
+    }
+    
+    func testFormSubmission_withValidInput_displaysConfirmationResult() {
+        let nameField = app.textFields["nameTextField"]
+        XCTAssertTrue(nameField.waitForExistence(timeout: 3), "Name text field should exist on launch.")
+        nameField.tap()
+        nameField.typeText("Bharat Kumar")
+        
+        let emailField = app.textFields["emailTextField"]
+        XCTAssertTrue(emailField.exists)
+        emailField.tap()
+        emailField.typeText("bharat@example.com")
+        
+        let submitButton = app.buttons["submitButton"]
+        XCTAssertTrue(submitButton.exists)
+        submitButton.tap()
+        
+        let confirmationBanner = app.staticTexts["confirmationBanner"]
+        XCTAssertTrue(confirmationBanner.waitForExistence(timeout: 3), "Confirmation message should appear after valid submission.")
+        XCTAssertEqual(confirmationBanner.label, "Enrolled Bharat Kumar in iOS Development!")
+        XCTAssertFalse(app.staticTexts["validationErrorLabel"].exists)
+    }
+    
+    func testFormSubmission_withEmptyOrInvalidInput_displaysValidationError() {
+        let nameField = app.textFields["nameTextField"]
+        XCTAssertTrue(nameField.waitForExistence(timeout: 3))
+        nameField.tap()
+        nameField.typeText("A")
+        
+        let submitButton = app.buttons["submitButton"]
+        submitButton.tap()
+        
+        let errorLabel = app.staticTexts["validationErrorLabel"]
+        XCTAssertTrue(errorLabel.waitForExistence(timeout: 3), "Validation error label should appear for invalid input.")
+        XCTAssertEqual(errorLabel.label, "Please enter a valid full name.")
+        XCTAssertFalse(app.staticTexts["confirmationBanner"].exists)
+    }
+}
