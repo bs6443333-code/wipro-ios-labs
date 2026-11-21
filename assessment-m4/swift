@@ -1,0 +1,166 @@
+import SwiftUI
+import Observation
+
+// MARK: - 1. App Entry Point
+@main
+struct AssessmentMilestone4App: App {
+    // Shared source of truth instantiated at the root so all views stay synchronized
+    @State private var catalog = WorkshopCatalog()
+    
+    var body: some Scene {
+        WindowGroup {
+            WorkshopExplorerView(catalog: catalog)
+        }
+    }
+}
+
+// MARK: - 2. Data Model & Shared Observable Store (Tasks 1, 2, 3)
+struct Workshop: Identifiable, Hashable {
+    let id = UUID()
+    let title: String
+    let track: String
+    let speaker: String
+    let schedule: String
+    let overview: String
+    var isFavourite: Bool = false
+    var registeredCount: Int = 0
+}
+
+@Observable
+class WorkshopCatalog {
+    var workshops: [Workshop] = [
+        Workshop(
+            title: "Declarative Navigation Patterns",
+            track: "SwiftUI Architecture",
+            speaker: "Jane Doe",
+            schedule: "Day 1 • 10:00 AM",
+            overview: "Build predictable multi-screen flows with NavigationStack, value-based NavigationLinks, and clean state ownership.",
+            isFavourite: true,
+            registeredCount: 24
+        ),
+        Workshop(
+            title: "Data Flow & Observation",
+            track: "State Management",
+            speaker: "Dr. Sam Lee",
+            schedule: "Day 1 • 02:00 PM",
+            overview: "Compare @State, @Binding, and @Observable models to keep lists, detail screens, and forms synchronized.",
+            isFavourite: false,
+            registeredCount: 18
+        ),
+        Workshop(
+            title: "Xcode Targets & App Signing",
+            track: "Configuration",
+            speaker: "Alex Rivera",
+            schedule: "Day 2 • 11:30 AM",
+            overview: "Audit bundle identifiers, deployment targets, Info.plist privacy keys, and build configurations safely.",
+            isFavourite: false,
+            registeredCount: 31
+        )
+    ]
+    
+    func toggleFavourite(for workshopID: UUID) {
+        if let index = workshops.firstIndex(where: { $0.id == workshopID }) {
+            workshops[index].isFavourite.toggle()
+        }
+    }
+    
+    func incrementRegistration(for workshopID: UUID) {
+        if let index = workshops.firstIndex(where: { $0.id == workshopID }) {
+            workshops[index].registeredCount += 1
+        }
+    }
+}
+
+// MARK: - 3. List-Detail Flow with Synced Favourites (Tasks 1 & 2)
+struct WorkshopExplorerView: View {
+    @Bindable var catalog: WorkshopCatalog
+    @State private var showFavouritesOnly: Bool = false
+    @State private var searchText: String = ""
+    
+    private var visibleWorkshops: [Workshop] {
+        catalog.workshops.filter { item in
+            let matchesFav = !showFavouritesOnly || item.isFavourite
+            let matchesQuery = searchText.isEmpty ||
+                item.title.localizedCaseInsensitiveContains(searchText) ||
+                item.track.localizedCaseInsensitiveContains(searchText)
+            return matchesFav && matchesQuery
+        }
+    }
+    
+    var body: some View {
+        NavigationStack {
+            List {
+                // Filter Section
+                Section {
+                    Toggle(isOn: $showFavouritesOnly.animation()) {
+                        Label("Favourites Only", systemImage: showFavouritesOnly ? "heart.fill" : "heart")
+                            .foregroundColor(showFavouritesOnly ? .pink : .primary)
+                    }
+                }
+                
+                // Workshop List Section
+                Section("Workshops (\(visibleWorkshops.count))") {
+                    if visibleWorkshops.isEmpty {
+                        ContentUnavailableView(
+                            "No Matching Workshops",
+                            systemImage: "magnifyingglass",
+                            description: Text("Adjust your search or turn off the Favourites filter.")
+                        )
+                    } else {
+                        ForEach(visibleWorkshops) { workshop in
+                            NavigationLink(value: workshop.id) {
+                                WorkshopRowView(
+                                    workshop: workshop,
+                                    onToggleFavourite: {
+                                        catalog.toggleFavourite(for: workshop.id)
+                                    }
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+            .navigationTitle("Tech Summit")
+            .searchable(text: $searchText, prompt: "Search workshops or tracks")
+            // Task 1 & 2: Destination binds directly to the item in the shared catalog
+            .navigationDestination(for: UUID.self) { workshopID in
+                if let index = catalog.workshops.firstIndex(where: { $0.id == workshopID }) {
+                    WorkshopDetailView(
+                        workshop: $catalog.workshops[index],
+                        onRegisterSuccess: {
+                            catalog.incrementRegistration(for: workshopID)
+                        }
+                    )
+                }
+            }
+        }
+    }
+}
+
+// MARK: - 4. List Row Subview (Task 2)
+struct WorkshopRowView: View {
+    let workshop: Workshop
+    let onToggleFavourite: () -> Void
+    
+    var body: some View {
+        HStack(spacing: 12) {
+            VStack(alignment: .leading, spacing: 4) {
+                Text(workshop.track.uppercased())
+                    .font(.caption2)
+                    .fontWeight(.bold)
+                    .foregroundColor(.accentColor)
+                
+                Text(workshop.title)
+                    .font(.headline)
+                
+                Text("\(workshop.speaker) • \(workshop.schedule)")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
+            
+            Spacer()
+            
+            // Syncs immediately with WorkshopDetailView
+            Button(action: onToggleFavourite) {
+                Image(systemName: workshop.isFavourite ? "heart.fill" : "heart")
+                    .foregroundColor(workshop.is
