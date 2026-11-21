@@ -1,0 +1,140 @@
+import SwiftUI
+
+// MARK: - 1. App Entry Point (Task 1)
+@main
+struct NavigationTemplateApp: App {
+    var body: some Scene {
+        WindowGroup {
+            ItemListView()
+        }
+    }
+}
+
+// MARK: - 2. Data Model
+struct StudyTopic: Identifiable, Hashable {
+    let id = UUID()
+    let title: String
+    let subtitle: String
+    let summary: String
+    let iconName: String
+    let accentColor: Color
+}
+
+extension StudyTopic {
+    static let sampleTopics: [StudyTopic] = [
+        StudyTopic(
+            title: "App Lifecycle & @main",
+            subtitle: "Scene & WindowGroup",
+            summary: "The @main attribute marks the starting point of the app, configuring top-level scenes rather than drawing UI directly.",
+            iconName: "app.badge.checkmark",
+            accentColor: .blue
+        ),
+        StudyTopic(
+            title: "NavigationStack",
+            subtitle: "Type-safe routing",
+            summary: "NavigationStack manages a stack of views over a root view, enabling predictable push and pop transitions.",
+            iconName: "arrow.triangle.turn.up.right.diamond",
+            accentColor: .green
+        ),
+        StudyTopic(
+            title: "Toolbar Actions",
+            subtitle: "Contextual controls",
+            summary: "The .toolbar modifier places interactive buttons in the navigation bar without cluttering the main view hierarchy.",
+            iconName: "hammer.circle",
+            accentColor: .orange
+        )
+    ]
+}
+
+// MARK: - 3. List View with NavigationStack & Toolbar (Tasks 2, 3, 4)
+struct ItemListView: View {
+    @State private var topics: [StudyTopic] = StudyTopic.sampleTopics
+    @State private var navigationPath = NavigationPath()
+    @State private var isShowingInfoSheet = false
+    
+    var body: some View {
+        NavigationStack(path: $navigationPath) {
+            List(topics) { topic in
+                // Task 2 & 3: Navigate and pass the selected model
+                NavigationLink(value: topic) {
+                    TopicRowView(topic: topic)
+                }
+            }
+            .navigationTitle("SwiftUI Topics")
+            // Task 3: Destination receives the passed model
+            .navigationDestination(for: StudyTopic.self) { selectedTopic in
+                TopicDetailView(topic: selectedTopic, path: $navigationPath)
+            }
+            // Task 4: Toolbar actions on the root screen
+            .toolbar {
+                ToolbarItem(placement: .topBarLeading) {
+                    Button {
+                        isShowingInfoSheet = true
+                    } label: {
+                        Image(systemName: "info.circle")
+                    }
+                }
+                
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button {
+                        addRandomTopic()
+                    } label: {
+                        Label("Add Topic", systemImage: "plus")
+                    }
+                }
+            }
+            .sheet(isPresented: $isShowingInfoSheet) {
+                AppArchitectureSheet()
+            }
+        }
+    }
+    
+    private func addRandomTopic() {
+        let count = topics.count + 1
+        let newTopic = StudyTopic(
+            title: "Custom Module #\(count)",
+            subtitle: "Added via Toolbar",
+            summary: "This item was dynamically added using the top-right toolbar button and supports full navigation.",
+            iconName: "sparkles",
+            accentColor: .purple
+        )
+        withAnimation {
+            topics.append(newTopic)
+        }
+    }
+}
+
+// MARK: - 4. Detail View with Back-Navigation Control (Tasks 3 & 4)
+struct TopicDetailView: View {
+    let topic: StudyTopic
+    @Binding var path: NavigationPath
+    @Environment(\.dismiss) private var dismiss
+    
+    var body: some View {
+        VStack(alignment: .leading, spacing: 20) {
+            HStack(spacing: 14) {
+                Image(systemName: topic.iconName)
+                    .font(.largeTitle)
+                    .foregroundColor(topic.accentColor)
+                    .frame(width: 56, height: 56)
+                    .background(topic.accentColor.opacity(0.15))
+                    .clipShape(RoundedRectangle(cornerRadius: 12))
+                
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(topic.title)
+                        .font(.title2)
+                        .fontWeight(.bold)
+                    Text(topic.subtitle)
+                        .font(.subheadline)
+                        .foregroundColor(.secondary)
+                }
+            }
+            
+            Divider()
+            
+            Text(topic.summary)
+                .font(.body)
+                .lineSpacing(4)
+            
+            // Optional deep-link push to demonstrate multi-step back navigation
+            if let nextTopic = StudyTopic.sampleTopics.first(where
