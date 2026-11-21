@@ -1,0 +1,40 @@
+# Personal Expense Tracker (iOS / SwiftUI)
+
+## 1. Problem Statement
+Students and young professionals often lose track of small daily purchases across categories like food, transit, and study materials, leading to accidental overspending before month-end. **Personal Expense Tracker** provides a fast, offline-first interface to log transactions, inspect category totals, and monitor monthly budget thresholds in real time.
+
+## 2. Target Users
+- College students managing fixed monthly allowances.
+- Individuals who want immediate visual feedback on budget utilization without linking bank credentials.
+
+## 3. Core Features
+- **Four Navigation Destinations:**
+  1. **Dashboard (`DashboardView`):** Live spending summary card, progress bar, category filter chips, search bar, and transaction list[cite: 10].
+  2. **Expense Detail (`ExpenseDetailView`):** Full transaction breakdown with delete capability[cite: 10].
+  3. **Add Expense (`AddExpenseView`):** Declaratively validated form preventing empty titles or non-positive amounts[cite: 10].
+  4. **Budget & Insights (`BudgetSettingsView`):** Configurable monthly budget limit and category-by-category spending breakdown[cite: 10].
+- **Collection Transformations & Business Rules:** Uses `filter`, `sorted`, `reduce`, and `Dictionary(grouping:by:)` to compute total spend, grouped category summaries, and automatic warning (`>= 85%`) / over-budget (`> 100%`) status alerts[cite: 10].
+- **Empty, Error & Validation States:** Handles empty filter/list states via `ContentUnavailableView`, service load failures with a retry action, and typed `ExpenseValidationError` messages[cite: 10].
+
+## 4. Architecture Diagram
+```text
++-------------------------------------------------------------------+
+|                   PersonalExpenseTrackerApp (@main)               |
++---------------------------------+---------------------------------+
+                                  | injects @State
+                                  v
++-------------------------------------------------------------------+
+|                     ExpenseViewModel (@Observable)                |
+|  - expenses: [Expense]            - filteredExpenses (computed)   |
+|  - monthlyBudget: Double          - categoryTotals (grouped)      |
+|  - budgetStatusMessage (rule)     - add/delete/validate methods   |
++----------------+---------------------------------+----------------+
+                 | depends on protocol             | drives UI
+                 v                                 v
++---------------------------------+   +-----------------------------+
+|  ExpenseStorageService (Proto)  |   |       SwiftUI Views         |
+|  - LocalExpenseService (App)    |   |  1. DashboardView           |
+|  - MockExpenseService (Tests)   |   |  2. ExpenseDetailView       |
++---------------------------------+   |  3. AddExpenseView (Sheet)  |
+                                      |  4. BudgetSettingsView      |
+                                      +-----------------------------+
